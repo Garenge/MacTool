@@ -219,8 +219,8 @@ class BatteryChartView: NSView {
     }
     
     private func prepareData() {
-        // 准备数据：只使用充电中的数据
-        chargingPoints = dataPoints.filter { $0.isCharging && $0.power > 0 }
+        // 准备数据：显示所有数据点（包括功率为0的），以便看到完整的时间线
+        chargingPoints = dataPoints
         
         let now = Date().timeIntervalSince1970
         
