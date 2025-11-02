@@ -176,10 +176,10 @@ class PowerViewController: NSViewController {
             infoPanel.topAnchor.constraint(equalTo: view.topAnchor),
             infoPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             infoPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            infoPanel.heightAnchor.constraint(equalToConstant: 180),
+            infoPanel.heightAnchor.constraint(equalToConstant: 220),
             
             // 滚动视图（增加顶部间距，让按钮下方有更多空间）
-            scrollView.topAnchor.constraint(equalTo: infoPanel.bottomAnchor, constant: 20),
+            scrollView.topAnchor.constraint(equalTo: infoPanel.bottomAnchor, constant: 0),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
