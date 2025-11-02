@@ -84,15 +84,24 @@ struct BatteryDataPoint: Codable, Equatable {
         }
         
         // 如果在充电，解析电流并计算功率
-        guard let current = extractValue(from: output, pattern: #"\n\s+"InstantAmperage"\s*=\s*(\d+)"#) else {
+        // 支持正负数（负值表示放电，正值表示充电）
+        guard let current = extractValue(from: output, pattern: #"\n\s+"InstantAmperage"\s*=\s*([-]?\d+)"#) else {
             print("[BatteryDataPoint] ❌ 充电状态但电流解析失败")
             return nil
         }
         
-        // 检查电流值是否异常（溢出值通常在 18446744073709550000 以上）
-        // 正常的电池电流范围应该在 -10000mA 到 10000mA 之间
-        if abs(current) > 10000 {
-            print("[BatteryDataPoint] ❌ 电流值异常: \(current) mA")
+        // 检查电流值是否异常
+        // 1. 首先检查是否为无符号整数溢出值（UInt64.max 约为 1.844e+19）
+        //    这个值通常表示数据读取错误或设备未正确初始化
+        if abs(current) > 1.0e+18 {
+            print("[BatteryDataPoint] ❌ 电流值异常（可能是溢出）: \(current) mA")
+            return nil
+        }
+        
+        // 2. 检查是否在合理范围内（正常电池电流范围：-10000mA 到 10000mA）
+        //    负值表示放电，正值表示充电
+        if current < -10000 || current > 10000 {
+            print("[BatteryDataPoint] ❌ 电流值超出合理范围: \(current) mA")
             return nil
         }
         
@@ -123,7 +132,19 @@ struct BatteryDataPoint: Codable, Equatable {
         let range = NSRange(location: 0, length: output.utf16.count)
         guard let match = regex.firstMatch(in: output, range: range) else { return nil }
         guard let numberRange = Range(match.range(at: 1), in: output) else { return nil }
-        return Double(output[numberRange])
+        
+        let numberString = String(output[numberRange])
+        
+        // 安全检查：如果字符串过长，可能是异常值（正常电池数值不应该超过10位）
+        if numberString.count > 10 {
+            print("[BatteryDataPoint] ⚠️ 检测到异常长的数值字符串: \(numberString)")
+            return nil
+        }
+        
+        // 转换为 Double
+        guard let value = Double(numberString) else { return nil }
+        
+        return value
     }
     
     private static func extractIntValue(from output: String, pattern: String) -> Int? {
