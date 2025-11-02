@@ -162,28 +162,29 @@ class BatteryChartView: NSView {
         let endTime = timeRange.end
         let timeDiff = max(endTime - startTime, 1) // 避免除零
         
+        // X轴是功率，Y轴是时间
         // 绘制区域填充
         context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.1).cgColor)
         context.beginPath()
         
         // 起点
         let firstPoint = chargingPoints.first!
-        let firstX = rect.minX + CGFloat((firstPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        let firstY = rect.minY + CGFloat((firstPoint.power - minPower) / powerDiff) * rect.height
-        context.move(to: CGPoint(x: firstX, y: rect.minY))
+        let firstX = rect.minX + CGFloat((firstPoint.power - minPower) / powerDiff) * rect.width
+        let firstY = rect.minY + CGFloat((firstPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
+        context.move(to: CGPoint(x: rect.minX, y: firstY))
         context.addLine(to: CGPoint(x: firstX, y: firstY))
         
         // 连接所有点
         for point in chargingPoints {
-            let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-            let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
+            let x = rect.minX + CGFloat((point.power - minPower) / powerDiff) * rect.width
+            let y = rect.minY + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
             context.addLine(to: CGPoint(x: x, y: y))
         }
         
         // 终点
         let lastPoint = chargingPoints.last!
-        let lastX = rect.minX + CGFloat((lastPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        context.addLine(to: CGPoint(x: lastX, y: rect.minY))
+        let lastY = rect.minY + CGFloat((lastPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
+        context.addLine(to: CGPoint(x: rect.minX, y: lastY))
         context.closePath()
         context.fillPath()
         
@@ -195,13 +196,13 @@ class BatteryChartView: NSView {
         
         context.beginPath()
         let startPoint = chargingPoints.first!
-        let startX = rect.minX + CGFloat((startPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        let startY = rect.minY + CGFloat((startPoint.power - minPower) / powerDiff) * rect.height
+        let startX = rect.minX + CGFloat((startPoint.power - minPower) / powerDiff) * rect.width
+        let startY = rect.minY + CGFloat((startPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
         context.move(to: CGPoint(x: startX, y: startY))
         
         for point in chargingPoints.dropFirst() {
-            let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-            let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
+            let x = rect.minX + CGFloat((point.power - minPower) / powerDiff) * rect.width
+            let y = rect.minY + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
             context.addLine(to: CGPoint(x: x, y: y))
         }
         
@@ -212,8 +213,8 @@ class BatteryChartView: NSView {
         let pointRadius: CGFloat = 3
         
         for point in chargingPoints {
-            let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-            let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
+            let x = rect.minX + CGFloat((point.power - minPower) / powerDiff) * rect.width
+            let y = rect.minY + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.height
             context.fillEllipse(in: NSRect(x: x - pointRadius, y: y - pointRadius, width: pointRadius * 2, height: pointRadius * 2))
         }
     }
@@ -222,10 +223,11 @@ class BatteryChartView: NSView {
         // 准备数据：只使用充电中的数据
         chargingPoints = dataPoints.filter { $0.isCharging && $0.power > 0 }
         
-        // 功率范围
+        // 功率范围（最小值设为0，从底部开始）
+        let maxPower = chargingPoints.map { $0.power }.max() ?? 100
         powerRange = (
-            min: chargingPoints.map { $0.power }.min() ?? 0,
-            max: chargingPoints.map { $0.power }.max() ?? 100
+            min: 0,  // 始终从0开始
+            max: maxPower * 1.1  // 留一些顶部空间
         )
         
         // 时间范围
@@ -236,9 +238,9 @@ class BatteryChartView: NSView {
     }
     
     private func drawHoveredPoint(context: CGContext, point: BatteryDataPoint, rect: NSRect) {
-        let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - timeRange.start) / (timeRange.end - timeRange.start)) * rect.width
         let powerDiff = powerRange.max - powerRange.min
-        let y = rect.minY + CGFloat((point.power - powerRange.min) / max(powerDiff, 1.0)) * rect.height
+        let x = rect.minX + CGFloat((point.power - powerRange.min) / max(powerDiff, 1.0)) * rect.width
+        let y = rect.minY + CGFloat((point.timestamp.timeIntervalSince1970 - timeRange.start) / (timeRange.end - timeRange.start)) * rect.height
         
         // 绘制交叉线
         context.setStrokeColor(NSColor.systemOrange.withAlphaComponent(0.5).cgColor)
@@ -323,37 +325,36 @@ class BatteryChartView: NSView {
         let startTime = timeRange.start
         let endTime = timeRange.end
         
-        // 绘制 Y 轴标签（功率）
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: NSColor.secondaryLabelColor
         ]
         
+        // X轴是功率（底部）
         for i in 0...gridLineCount {
-            let value = maxPower - (maxPower - minPower) * CGFloat(i) / CGFloat(gridLineCount)
+            let value = minPower + (maxPower - minPower) * CGFloat(i) / CGFloat(gridLineCount)
             let string = String(format: "%.1f W", value)
             let attributedString = NSAttributedString(string: string, attributes: attributes)
             let stringSize = attributedString.size()
-            let y = rect.minY + CGFloat(i) * (rect.height / CGFloat(gridLineCount))
-            let point = NSPoint(x: padding - stringSize.width - 8, y: y - stringSize.height / 2)
+            let x = rect.minX + CGFloat(i) * (rect.width / CGFloat(gridLineCount))
+            let point = NSPoint(x: x - stringSize.width / 2, y: padding - stringSize.height - 8)
             attributedString.draw(at: point)
         }
         
-        // 绘制 X 轴标签（时间）
+        // Y轴是时间（左侧）
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
         
-        // 只显示几个时间点
         let labelCount = min(5, gridLineCount + 1)
         for i in 0..<labelCount {
             let progress = CGFloat(i) / CGFloat(labelCount - 1)
-            let time = startTime + (endTime - startTime) * progress
+            let time = endTime - (endTime - startTime) * progress
             let date = Date(timeIntervalSince1970: time)
             let string = dateFormatter.string(from: date)
             let attributedString = NSAttributedString(string: string, attributes: attributes)
             let stringSize = attributedString.size()
-            let x = rect.minX + progress * rect.width
-            let point = NSPoint(x: x - stringSize.width / 2, y: padding - stringSize.height - 8)
+            let y = rect.minY + progress * rect.height
+            let point = NSPoint(x: padding - stringSize.width - 8, y: y - stringSize.height / 2)
             attributedString.draw(at: point)
         }
     }
@@ -383,9 +384,9 @@ class BatteryChartView: NSView {
         var closestDistance: CGFloat = hitRadius
         
         for point in chargingPoints {
-            let x = chartRect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - timeRange.start) / (timeRange.end - timeRange.start)) * chartRect.width
             let powerDiff = powerRange.max - powerRange.min
-            let y = chartRect.minY + CGFloat((point.power - powerRange.min) / max(powerDiff, 1.0)) * chartRect.height
+            let x = chartRect.minX + CGFloat((point.power - powerRange.min) / max(powerDiff, 1.0)) * chartRect.width
+            let y = chartRect.minY + CGFloat((point.timestamp.timeIntervalSince1970 - timeRange.start) / (timeRange.end - timeRange.start)) * chartRect.height
             
             let distance = sqrt(pow(location.x - x, 2) + pow(location.y - y, 2))
             if distance < closestDistance {
