@@ -59,18 +59,22 @@ class PowerViewController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         
-        // 创建容器视图（宽度足够大以支持横向滚动，但足够宽以基本铺满）
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 2000, height: 400))
-        containerView.translatesAutoresizingMaskIntoConstraints = true
+        // 创建容器视图
+        let containerView = NSView(frame: .zero)
+        containerView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = containerView
         
         // 创建图表视图
-        chartView = BatteryChartView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
+        chartView = BatteryChartView(frame: .zero)
         chartView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(chartView)
         
-        // 居中图表
+        // 容器约束：宽度跟随视图宽度，高度固定
         NSLayoutConstraint.activate([
+            containerView.widthAnchor.constraint(equalTo: view.widthAnchor),
+            containerView.heightAnchor.constraint(equalToConstant: 400),
+            
+            // 图表在容器中居中，固定大小
             chartView.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             chartView.topAnchor.constraint(equalTo: containerView.topAnchor),
             chartView.widthAnchor.constraint(equalToConstant: 800),
