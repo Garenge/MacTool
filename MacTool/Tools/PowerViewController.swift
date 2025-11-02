@@ -16,6 +16,8 @@ class PowerViewController: NSViewController {
     var statusLabel: NSTextField!
     var openDatabaseButton: NSButton!
     var clearDatabaseButton: NSButton!
+    var chartView: BatteryChartView!
+    var scrollView: NSScrollView!
     
     // MARK: - Lifecycle
     
@@ -48,73 +50,107 @@ class PowerViewController: NSViewController {
     }
     
     func setupUI() {
-        // 创建主容器
-        let containerView = NSView()
-        containerView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(containerView)
+        // 创建滚动视图（用于图表）
+        scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
         
-        NSLayoutConstraint.activate([
-            containerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            containerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            containerView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
-            containerView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
-            containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 400)
-        ])
+        // 创建图表视图
+        chartView = BatteryChartView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
+        chartView.translatesAutoresizingMaskIntoConstraints = true
+        scrollView.documentView = chartView
+        
+        // 创建顶部信息面板
+        let infoPanel = NSView()
+        infoPanel.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.wantsLayer = true
+        infoPanel.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        view.addSubview(infoPanel)
         
         // 创建功率标签
         powerLabel = NSTextField(labelWithString: "--")
-        powerLabel.font = NSFont.systemFont(ofSize: 64, weight: .medium)
+        powerLabel.font = NSFont.systemFont(ofSize: 48, weight: .medium)
         powerLabel.alignment = .center
         powerLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(powerLabel)
+        infoPanel.addSubview(powerLabel)
         
         // 创建状态标签
         statusLabel = NSTextField(labelWithString: "等待数据刷新...")
-        statusLabel.font = NSFont.systemFont(ofSize: 14)
+        statusLabel.font = NSFont.systemFont(ofSize: 13)
         statusLabel.alignment = .center
         statusLabel.textColor = NSColor.secondaryLabelColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(statusLabel)
+        infoPanel.addSubview(statusLabel)
+        
+        // 创建按钮容器
+        let buttonContainer = NSView()
+        buttonContainer.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(buttonContainer)
         
         // 创建刷新按钮
         refreshButton = NSButton(title: "刷新", target: self, action: #selector(manualRefresh))
         refreshButton.bezelStyle = .rounded
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(refreshButton)
+        buttonContainer.addSubview(refreshButton)
         
         // 创建打开数据库按钮
         openDatabaseButton = NSButton(title: "打开数据库", target: self, action: #selector(openDatabaseFolder))
         openDatabaseButton.bezelStyle = .rounded
         openDatabaseButton.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(openDatabaseButton)
+        buttonContainer.addSubview(openDatabaseButton)
         
         // 创建清空数据库按钮
         clearDatabaseButton = NSButton(title: "清空数据库", target: self, action: #selector(clearDatabase))
         clearDatabaseButton.bezelStyle = .rounded
         clearDatabaseButton.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(clearDatabaseButton)
+        buttonContainer.addSubview(clearDatabaseButton)
         
         // 布局约束
         NSLayoutConstraint.activate([
-            powerLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 40),
-            powerLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            // 信息面板
+            infoPanel.topAnchor.constraint(equalTo: view.topAnchor),
+            infoPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            infoPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            infoPanel.heightAnchor.constraint(equalToConstant: 160),
             
-            statusLabel.topAnchor.constraint(equalTo: powerLabel.bottomAnchor, constant: 20),
-            statusLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            // 滚动视图
+            scrollView.topAnchor.constraint(equalTo: infoPanel.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             
-            refreshButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 30),
-            refreshButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            refreshButton.widthAnchor.constraint(equalToConstant: 100),
+            // 功率标签
+            powerLabel.topAnchor.constraint(equalTo: infoPanel.topAnchor, constant: 20),
+            powerLabel.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
             
-            openDatabaseButton.topAnchor.constraint(equalTo: refreshButton.bottomAnchor, constant: 15),
-            openDatabaseButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            openDatabaseButton.widthAnchor.constraint(equalToConstant: 120),
+            // 状态标签
+            statusLabel.topAnchor.constraint(equalTo: powerLabel.bottomAnchor, constant: 8),
+            statusLabel.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
             
-            clearDatabaseButton.topAnchor.constraint(equalTo: openDatabaseButton.bottomAnchor, constant: 15),
-            clearDatabaseButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            clearDatabaseButton.widthAnchor.constraint(equalToConstant: 120),
+            // 按钮容器
+            buttonContainer.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 15),
+            buttonContainer.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
+            buttonContainer.heightAnchor.constraint(equalToConstant: 30),
             
-            containerView.bottomAnchor.constraint(equalTo: clearDatabaseButton.bottomAnchor, constant: 40)
+            // 刷新按钮
+            refreshButton.leadingAnchor.constraint(equalTo: buttonContainer.leadingAnchor),
+            refreshButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
+            refreshButton.widthAnchor.constraint(equalToConstant: 80),
+            
+            // 打开数据库按钮
+            openDatabaseButton.leadingAnchor.constraint(equalTo: refreshButton.trailingAnchor, constant: 10),
+            openDatabaseButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
+            openDatabaseButton.widthAnchor.constraint(equalToConstant: 100),
+            
+            // 清空数据库按钮
+            clearDatabaseButton.leadingAnchor.constraint(equalTo: openDatabaseButton.trailingAnchor, constant: 10),
+            clearDatabaseButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
+            clearDatabaseButton.widthAnchor.constraint(equalToConstant: 100),
+            clearDatabaseButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor)
         ])
     }
     
@@ -154,6 +190,7 @@ class PowerViewController: NSViewController {
         }
         
         updateUI(with: dataPoint)
+        updateChart()
     }
     
     // MARK: - UI Update
@@ -180,5 +217,11 @@ class PowerViewController: NSViewController {
             statusLabel.stringValue = "暂无数据"
             statusLabel.textColor = NSColor.secondaryLabelColor
         }
+        updateChart()
+    }
+    
+    private func updateChart() {
+        // 获取所有数据点并更新图表
+        chartView.dataPoints = PowerHelper.shared.getAllDataPoints()
     }
 }

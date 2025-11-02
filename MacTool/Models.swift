@@ -47,7 +47,7 @@ struct ToolItem {
 // MARK: - Battery Models
 
 /// 电池数据点
-struct BatteryDataPoint: Codable {
+struct BatteryDataPoint: Codable, Equatable {
     let timestamp: Date
     let voltage: Double          // mV
     let current: Double          // mA
