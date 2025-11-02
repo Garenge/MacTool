@@ -15,6 +15,7 @@ class PowerViewController: NSViewController {
     var refreshButton: NSButton!
     var statusLabel: NSTextField!
     var openDatabaseButton: NSButton!
+    var clearDatabaseButton: NSButton!
     
     // MARK: - Lifecycle
     
@@ -87,6 +88,12 @@ class PowerViewController: NSViewController {
         openDatabaseButton.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(openDatabaseButton)
         
+        // 创建清空数据库按钮
+        clearDatabaseButton = NSButton(title: "清空数据库", target: self, action: #selector(clearDatabase))
+        clearDatabaseButton.bezelStyle = .rounded
+        clearDatabaseButton.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(clearDatabaseButton)
+        
         // 布局约束
         NSLayoutConstraint.activate([
             powerLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 40),
@@ -103,7 +110,11 @@ class PowerViewController: NSViewController {
             openDatabaseButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             openDatabaseButton.widthAnchor.constraint(equalToConstant: 120),
             
-            containerView.bottomAnchor.constraint(equalTo: openDatabaseButton.bottomAnchor, constant: 40)
+            clearDatabaseButton.topAnchor.constraint(equalTo: openDatabaseButton.bottomAnchor, constant: 15),
+            clearDatabaseButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            clearDatabaseButton.widthAnchor.constraint(equalToConstant: 120),
+            
+            containerView.bottomAnchor.constraint(equalTo: clearDatabaseButton.bottomAnchor, constant: 40)
         ])
     }
     
@@ -120,6 +131,23 @@ class PowerViewController: NSViewController {
         NSWorkspace.shared.open(dbPath.deletingLastPathComponent())
     }
     
+    @objc private func clearDatabase() {
+        let alert = NSAlert()
+        alert.messageText = "清空数据库"
+        alert.informativeText = "确定要清空所有历史数据吗？此操作无法撤销。"
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            BatteryStorage.shared.clearAll()
+            statusLabel.stringValue = "数据库已清空"
+            statusLabel.textColor = NSColor.systemOrange
+            powerLabel.stringValue = "--"
+        }
+    }
+    
     @objc private func handlePowerDataUpdated(_ notification: Notification) {
         guard let dataPoint = notification.userInfo?["data"] as? BatteryDataPoint else {
             return
@@ -131,11 +159,16 @@ class PowerViewController: NSViewController {
     // MARK: - UI Update
     
     private func updateUI(with dataPoint: BatteryDataPoint) {
-        powerLabel.stringValue = String(format: "%.2f W", dataPoint.power)
-        
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm:ss"
-        statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 电量: \(dataPoint.percentage)%"
+        
+        if dataPoint.isCharging {
+            powerLabel.stringValue = String(format: "%.2f W", dataPoint.power)
+            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 电量: \(dataPoint.percentage)% | 充电中"
+        } else {
+            powerLabel.stringValue = "未充电"
+            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 电量: \(dataPoint.percentage)% | 未充电"
+        }
         statusLabel.textColor = NSColor.secondaryLabelColor
     }
     

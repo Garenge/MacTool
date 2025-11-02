@@ -31,9 +31,6 @@ class PowerHelper {
         guard !isRunning else { return }
         isRunning = true
         
-        // 清空旧数据
-        BatteryStorage.shared.clearAll()
-        
         print("[PowerHelper] 🚀 开始功率监控 | 刷新间隔: \(Int(refreshInterval))秒")
         
         // 立即获取一次数据
@@ -61,22 +58,9 @@ class PowerHelper {
             // 执行终端命令 - 获取完整电池信息
             let fullOutput = self?.executeFullBatteryCommand()
             
-            // 执行简化命令获取功率
-            let powerOutput = self?.executePowerCommand()
-            
             DispatchQueue.main.async {
-                // 先尝试从完整输出解析
-                var dataPoint: BatteryDataPoint?
-                if let fullOutput = fullOutput {
-                    dataPoint = BatteryDataPoint.parse(from: fullOutput)
-                }
-                
-                // 如果解析失败，使用功率输出
-                if dataPoint == nil, let powerOutput = powerOutput {
-                    dataPoint = BatteryDataPoint.parse(from: powerOutput)
-                }
-                
-                guard let dataPoint = dataPoint else {
+                guard let fullOutput = fullOutput,
+                      let dataPoint = BatteryDataPoint.parse(from: fullOutput) else {
                     print("[PowerHelper] ❌ 无法解析电池数据")
                     return
                 }
@@ -97,29 +81,8 @@ class PowerHelper {
         }
     }
     
-    /// 执行获取功率的命令
-    private func executePowerCommand() -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", "ioreg -n AppleSmartBattery -r | awk '/\"InstantAmperage\"/{a=$3} /\"Voltage\"/{v=$3} END{printf \"Current Power: %.2f W\\n\", a * v / 1000000}'"]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
-        }
-    }
-    
     /// 获取完整的电池信息（包含更多字段）
-    func executeFullBatteryCommand() -> String? {
+    private func executeFullBatteryCommand() -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
         task.arguments = ["-c", "ioreg -n AppleSmartBattery -r"]

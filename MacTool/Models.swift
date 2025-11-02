@@ -58,22 +58,52 @@ struct BatteryDataPoint: Codable {
     
     /// 从 ioreg 命令输出解析
     static func parse(from output: String) -> BatteryDataPoint? {
-        // 解析功率
-        guard let powerValue = extractPowerValue(from: output) else {
+        // 先判断是否在充电
+        let isCharging = output.contains("IsCharging.*=.*Yes") || output.contains("\"IsCharging\" = Yes")
+        
+        // 解析电压 (Voltage字段，单位mV) - 无论是否充电都需要
+        guard let voltage = extractValue(from: output, pattern: #"\n\s+"Voltage"\s*=\s*(\d+)"#), voltage > 0 else {
+            print("[BatteryDataPoint] ❌ 电压解析失败或为0")
             return nil
         }
-        
-        // 解析电压 (Voltage字段，单位mV)
-        let voltage = extractValue(from: output, pattern: #"\bVoltage.*?=\s*(\d+)"#) ?? 0.0
-        
-        // 解析电流 (InstantAmperage字段，单位mA)
-        let current = extractValue(from: output, pattern: #"InstantAmperage.*?=\s*(\d+)"#) ?? 0.0
         
         // 解析电量百分比
         let percentage = extractIntValue(from: output, pattern: #"CurrentCapacity.*?=\s*(\d+)"#) ?? 0
         
-        // 判断是否在充电
-        let isCharging = output.contains("IsCharging.*=.*Yes") || output.contains("\"IsCharging\" = Yes")
+        // 如果不在充电，直接返回（功率为0）
+        if !isCharging {
+            return BatteryDataPoint(
+                timestamp: Date(),
+                voltage: voltage,
+                current: 0,
+                power: 0,
+                percentage: percentage,
+                isCharging: false,
+                temperature: nil
+            )
+        }
+        
+        // 如果在充电，解析电流并计算功率
+        guard let current = extractValue(from: output, pattern: #"\n\s+"InstantAmperage"\s*=\s*(\d+)"#) else {
+            print("[BatteryDataPoint] ❌ 充电状态但电流解析失败")
+            return nil
+        }
+        
+        // 检查电流值是否异常（溢出值通常在 18446744073709550000 以上）
+        // 正常的电池电流范围应该在 -10000mA 到 10000mA 之间
+        if abs(current) > 10000 {
+            print("[BatteryDataPoint] ❌ 电流值异常: \(current) mA")
+            return nil
+        }
+        
+        // 计算功率（单位：W）
+        let powerValue = (voltage * current) / 1000000.0
+        
+        // 检查功率是否在合理范围内（-200W 到 200W）
+        if abs(powerValue) > 200 {
+            print("[BatteryDataPoint] ❌ 功率值异常: \(powerValue) W")
+            return nil
+        }
         
         return BatteryDataPoint(
             timestamp: Date(),
@@ -81,21 +111,12 @@ struct BatteryDataPoint: Codable {
             current: current,
             power: powerValue,
             percentage: percentage,
-            isCharging: isCharging,
+            isCharging: true,
             temperature: nil
         )
     }
     
     // MARK: - Private Helpers
-    
-    private static func extractPowerValue(from output: String) -> Double? {
-        let pattern = "([0-9]+\\.[0-9]+)"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(location: 0, length: output.utf16.count)
-        guard let match = regex.firstMatch(in: output, range: range) else { return nil }
-        guard let numberRange = Range(match.range(at: 1), in: output) else { return nil }
-        return Double(output[numberRange])
-    }
     
     private static func extractValue(from output: String, pattern: String) -> Double? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
@@ -118,6 +139,7 @@ class BatteryStorage {
     
     private var db: OpaquePointer?
     private let maxDataPoints = 10000 // 最大存储点数
+    private let maxRetentionDays = 7 // 数据保留天数
     
     private init() {
         setupDatabase()
@@ -240,14 +262,21 @@ class BatteryStorage {
     func clearAll() {
         let deleteSQL = "DELETE FROM BatteryDataPoint;"
         var statement: OpaquePointer?
+        var success = false
         
         if sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
-            if sqlite3_step(statement) != SQLITE_DONE {
-                print("Error deleting data")
+            if sqlite3_step(statement) == SQLITE_DONE {
+                success = true
+            } else {
+                print("[BatteryStorage] ❌ 清空数据失败")
             }
         }
         
         sqlite3_finalize(statement)
+        
+        if success {
+            print("[BatteryStorage] 🗑️ 所有数据已清空")
+        }
     }
     
     /// 获取数据点数量
@@ -312,17 +341,28 @@ class BatteryStorage {
     }
     
     private func cleanupOldData() {
+        // 1. 按时间清理：删除超过保留天数的数据
+        let cutoffTime = Date().addingTimeInterval(-Double(maxRetentionDays * 24 * 60 * 60)).timeIntervalSince1970
+        let deleteOldSQL = "DELETE FROM BatteryDataPoint WHERE timestamp < ?;"
+        
+        var statement: OpaquePointer?
+        if sqlite3_prepare_v2(db, deleteOldSQL, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_double(statement, 1, cutoffTime)
+            sqlite3_step(statement)
+            sqlite3_finalize(statement)
+        }
+        
+        // 2. 按数量清理：如果超过最大点数，删除最旧的数据
         let currentCount = count()
         if currentCount > maxDataPoints {
             let excessCount = currentCount - maxDataPoints
             let deleteSQL = "DELETE FROM BatteryDataPoint WHERE id IN (SELECT id FROM BatteryDataPoint ORDER BY timestamp ASC LIMIT ?);"
             
-            var statement: OpaquePointer?
             if sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
                 sqlite3_bind_int(statement, 1, Int32(excessCount))
                 sqlite3_step(statement)
+                sqlite3_finalize(statement)
             }
-            sqlite3_finalize(statement)
         }
     }
 }
