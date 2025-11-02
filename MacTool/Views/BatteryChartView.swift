@@ -332,7 +332,7 @@ class BatteryChartView: NSView {
         
         // Y轴是功率（左侧，顶部为最大值，底部为0）
         for i in 0...gridLineCount {
-            let value = maxPower - (maxPower - minPower) * CGFloat(i) / CGFloat(gridLineCount)
+            let value = minPower + (maxPower - minPower) * CGFloat(i) / CGFloat(gridLineCount)
             let string = String(format: "%.1f W", value)
             let attributedString = NSAttributedString(string: string, attributes: attributes)
             let stringSize = attributedString.size()
