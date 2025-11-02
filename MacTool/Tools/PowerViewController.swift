@@ -238,7 +238,9 @@ class PowerViewController: NSViewController {
     }
     
     private func updateChart() {
-        // 获取所有数据点并更新图表
-        chartView.dataPoints = PowerHelper.shared.getAllDataPoints()
+        // 获取最近1小时的数据点并更新图表
+        let now = Date()
+        let oneHourAgo = now.addingTimeInterval(-3600) // 减去1小时（3600秒）
+        chartView.dataPoints = PowerHelper.shared.getDataPoints(from: oneHourAgo, to: now)
     }
 }
