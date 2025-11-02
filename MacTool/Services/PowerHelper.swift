@@ -67,21 +67,35 @@ class PowerHelper {
             // 方法2：如果方法1失败，尝试分别获取电压和电流（分步操作）
             print("[PowerHelper] ⚠️ 完整解析失败，尝试分别获取电压和电流...")
             
+            // 分步获取所有信息
             let voltage = self?.getVoltage()
             let current = self?.getCurrent()
             let isCharging = self?.getChargingStatus() ?? false
             let percentage = self?.getBatteryPercentage() ?? 0
             
+            // 获取额外信息（分步操作，可选）
+            let temperature = self?.getTemperature()
+            let cycleCount = self?.getCycleCount()
+            let designCapacity = self?.getDesignCapacity()
+            let maxCapacity = self?.getMaxCapacity()
+            let batteryHealth = self?.calculateBatteryHealth(maxCapacity: maxCapacity, designCapacity: designCapacity)
+            
             // 如果电压获取成功，创建数据点
             if let voltage = voltage, voltage > 0 {
+                let powerValue = current != nil ? (voltage * (current ?? 0)) / 1000000.0 : 0
+                
                 let dataPoint = BatteryDataPoint(
                     timestamp: Date(),
                     voltage: voltage,
                     current: current ?? 0,
-                    power: current != nil ? (voltage * (current ?? 0)) / 1000000.0 : 0,
+                    power: powerValue,
                     percentage: percentage,
                     isCharging: isCharging,
-                    temperature: nil
+                    temperature: temperature,
+                    cycleCount: cycleCount,
+                    designCapacity: designCapacity,
+                    maxCapacity: maxCapacity,
+                    batteryHealth: batteryHealth
                 )
                 
                 DispatchQueue.main.async {
@@ -148,7 +162,22 @@ class PowerHelper {
     /// 获取充电状态
     private func getChargingStatus() -> Bool {
         if let output = executeIORegCommand(arguments: ["-rn", "AppleSmartBattery", "-w", "0"]) {
-            return output.contains("\"IsCharging\" = Yes")
+            // 检查多个条件
+            let hasIsCharging = output.contains("\"IsCharging\" = Yes")
+            let hasExternalConnected = output.contains("\"ExternalConnected\" = Yes")
+            
+            // 如果 IsCharging = Yes，直接返回 true
+            if hasIsCharging {
+                return true
+            }
+            
+            // 如果充电器已连接，检查电流判断是否在充电
+            if hasExternalConnected {
+                if let current = getCurrent(), current > 100 {
+                    // 正电流且大于100mA，认为在充电
+                    return true
+                }
+            }
         }
         return false
     }
@@ -161,6 +190,55 @@ class PowerHelper {
             return percentage
         }
         return 0
+    }
+    
+    /// 获取温度（单位：°C）
+    private func getTemperature() -> Double? {
+        if let output = executeIORegCommand(arguments: ["-rn", "AppleSmartBattery", "-w", "0"]),
+           let tempStr = extractValueFromIOReg(output: output, key: "Temperature"),
+           let temp = Int(tempStr) {
+            // Temperature 字段单位是 0.1°C，需要除以 10
+            return Double(temp) / 10.0
+        }
+        return nil
+    }
+    
+    /// 获取循环次数
+    private func getCycleCount() -> Int? {
+        if let output = executeIORegCommand(arguments: ["-rn", "AppleSmartBattery", "-w", "0"]),
+           let cycleStr = extractValueFromIOReg(output: output, key: "CycleCount"),
+           let cycle = Int(cycleStr) {
+            return cycle
+        }
+        return nil
+    }
+    
+    /// 获取设计容量（mAh）
+    private func getDesignCapacity() -> Int? {
+        if let output = executeIORegCommand(arguments: ["-rn", "AppleSmartBattery", "-w", "0"]),
+           let capacityStr = extractValueFromIOReg(output: output, key: "DesignCapacity"),
+           let capacity = Int(capacityStr) {
+            return capacity
+        }
+        return nil
+    }
+    
+    /// 获取最大容量（mAh）
+    private func getMaxCapacity() -> Int? {
+        if let output = executeIORegCommand(arguments: ["-rn", "AppleSmartBattery", "-w", "0"]),
+           let capacityStr = extractValueFromIOReg(output: output, key: "MaxCapacity"),
+           let capacity = Int(capacityStr) {
+            return capacity
+        }
+        return nil
+    }
+    
+    /// 计算电池健康度（0-100%）
+    private func calculateBatteryHealth(maxCapacity: Int?, designCapacity: Int?) -> Double? {
+        guard let max = maxCapacity, let design = designCapacity, design > 0 else {
+            return nil
+        }
+        return Double(max) / Double(design) * 100.0
     }
     
     /// 执行 ioreg 命令的通用方法
@@ -230,6 +308,29 @@ class PowerHelper {
     /// 清空所有数据
     func clearAllData() {
         BatteryStorage.shared.clearAll()
+    }
+    
+    // MARK: - Statistics Methods
+    
+    /// 获取所有数据的统计分析
+    func getAllStatistics() -> BatteryStatistics? {
+        return BatteryStatisticsAnalyzer.shared.analyzeAll()
+    }
+    
+    /// 获取指定时间范围内的统计分析
+    func getStatistics(from startDate: Date, to endDate: Date) -> BatteryStatistics? {
+        return BatteryStatisticsAnalyzer.shared.analyze(from: startDate, to: endDate)
+    }
+    
+    /// 获取最近 N 个数据点的统计分析
+    func getRecentStatistics(count: Int) -> BatteryStatistics? {
+        return BatteryStatisticsAnalyzer.shared.analyzeRecent(count: count)
+    }
+    
+    /// 获取功率随电量变化的详细数据
+    func getPowerByPercentageData() -> [(percentage: Int, averagePower: Double, sampleCount: Int)] {
+        let dataPoints = BatteryStorage.shared.loadAll()
+        return BatteryStatisticsAnalyzer.shared.getPowerByPercentageData(dataPoints: dataPoints)
     }
 }
 
