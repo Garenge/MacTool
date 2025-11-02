@@ -73,28 +73,27 @@ class BatteryChartView: NSView {
         // 绘制背景
         drawBackground(context: context, rect: dirtyRect)
         
-        // 如果没有数据，显示提示
-        if dataPoints.isEmpty {
-            drawNoDataMessage(context: context)
-            return
-        }
-        
-        // 缓存计算值
+        // 缓存计算值（即使没有数据也设置默认范围）
         chartRect = getChartRect()
         prepareData()
         
         // 绘制网格
         drawGrid(context: context, rect: chartRect)
         
-        // 绘制曲线
-        drawPowerCurve(context: context, rect: chartRect)
-        
-        // 绘制悬停点
-        if let hoveredPoint = hoveredPoint {
-            drawHoveredPoint(context: context, point: hoveredPoint, rect: chartRect)
+        // 如果没有数据，显示提示信息
+        if dataPoints.isEmpty {
+            drawNoDataMessage(context: context)
+        } else {
+            // 绘制曲线
+            drawPowerCurve(context: context, rect: chartRect)
+            
+            // 绘制悬停点
+            if let hoveredPoint = hoveredPoint {
+                drawHoveredPoint(context: context, point: hoveredPoint, rect: chartRect)
+            }
         }
         
-        // 绘制坐标轴标签
+        // 始终绘制坐标轴标签（即使没有数据）
         drawAxisLabels(context: context, rect: chartRect)
     }
     
@@ -223,18 +222,37 @@ class BatteryChartView: NSView {
         // 准备数据：只使用充电中的数据
         chargingPoints = dataPoints.filter { $0.isCharging && $0.power > 0 }
         
-        // 功率范围（最小值设为0，从底部开始）
-        let maxPower = chargingPoints.map { $0.power }.max() ?? 100
-        powerRange = (
-            min: 0,  // 始终从0开始
-            max: maxPower * 1.1  // 留一些顶部空间
-        )
+        let now = Date().timeIntervalSince1970
         
-        // 时间范围
-        timeRange = (
-            start: chargingPoints.first?.timestamp.timeIntervalSince1970 ?? 0,
-            end: chargingPoints.last?.timestamp.timeIntervalSince1970 ?? 1
-        )
+        if chargingPoints.isEmpty {
+            // 如果没有数据，设置默认范围
+            timeRange = (
+                start: now - 3600,  // 最近1小时
+                end: now
+            )
+            powerRange = (
+                min: 0,
+                max: 30.0  // 默认最大值30W（可根据需要调整）
+            )
+        } else {
+            // 功率范围（最小值设为0，从底部开始）
+            let maxPower = chargingPoints.map { $0.power }.max() ?? 30.0
+            powerRange = (
+                min: 0,  // 始终从0开始
+                max: max(maxPower * 1.1, 10.0)  // 留一些顶部空间，最小10W以便显示
+            )
+            
+            // 时间范围：如果数据点时间范围小于1小时，扩展到1小时
+            let dataStartTime = chargingPoints.first?.timestamp.timeIntervalSince1970 ?? now - 3600
+            let dataEndTime = chargingPoints.last?.timestamp.timeIntervalSince1970 ?? now
+            
+            // 确保时间范围至少是最近1小时
+            let oneHourAgo = now - 3600
+            timeRange = (
+                start: min(dataStartTime, oneHourAgo),
+                end: max(dataEndTime, now)
+            )
+        }
     }
     
     private func drawHoveredPoint(context: CGContext, point: BatteryDataPoint, rect: NSRect) {
@@ -317,9 +335,7 @@ class BatteryChartView: NSView {
     }
     
     private func drawAxisLabels(context: CGContext, rect: NSRect) {
-        guard !chargingPoints.isEmpty else { return }
-        
-        // 功率范围和时间范围已缓存
+        // 功率范围和时间范围已缓存（即使没有数据也已设置默认值）
         let minPower = powerRange.min
         let maxPower = powerRange.max
         let startTime = timeRange.start
