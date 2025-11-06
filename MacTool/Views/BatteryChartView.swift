@@ -162,59 +162,188 @@ class BatteryChartView: NSView {
         let timeDiff = max(endTime - startTime, 1) // 避免除零
         
         // X轴是时间，Y轴是功率（传统图表方式）
-        // 绘制区域填充
-        context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.1).cgColor)
-        context.beginPath()
-        
-        // 起点（Y轴正常：顶部是最大值，底部是0）
-        let firstPoint = chargingPoints.first!
-        let firstX = rect.minX + CGFloat((firstPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        let firstY = rect.minY + CGFloat((firstPoint.power - minPower) / powerDiff) * rect.height
-        context.move(to: CGPoint(x: firstX, y: rect.minY))
-        context.addLine(to: CGPoint(x: firstX, y: firstY))
-        
-        // 连接所有点
-        for point in chargingPoints {
+        // 转换数据点为CGPoint数组
+        var points = chargingPoints.map { point -> CGPoint in
             let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
             let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
-            context.addLine(to: CGPoint(x: x, y: y))
+            return CGPoint(x: x, y: y)
         }
         
-        // 终点
-        let lastPoint = chargingPoints.last!
-        let lastX = rect.minX + CGFloat((lastPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        context.addLine(to: CGPoint(x: lastX, y: rect.minY))
-        context.closePath()
-        context.fillPath()
+        // 如果数据点太多，进行采样以获得更好的平滑效果
+        // 关键：数据点越少，平滑效果越明显
+        let maxPoints = 30  // 限制为30个点，使平滑效果更明显
+        if points.count > maxPoints {
+            let step = max(1, points.count / maxPoints)
+            var sampledPoints: [CGPoint] = []
+            for i in stride(from: 0, to: points.count, by: step) {
+                sampledPoints.append(points[i])
+            }
+            // 确保包含最后一个点
+            if let lastPoint = points.last, sampledPoints.last != lastPoint {
+                sampledPoints.append(lastPoint)
+            }
+            points = sampledPoints
+            print("📊 采样后数据点: \(points.count) (原始: \(chargingPoints.count))")
+        } else {
+            print("📊 数据点数量: \(points.count)")
+        }
         
-        // 绘制曲线
+        // 绘制区域填充（使用平滑曲线）
+        if points.count > 1 {
+            context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.1).cgColor)
+            context.beginPath()
+            
+            // 起点（从底部开始）
+            context.move(to: CGPoint(x: points[0].x, y: rect.minY))
+            context.addLine(to: points[0])
+            
+            // 使用改进的贝塞尔曲线连接所有点（更平滑）
+            if points.count == 2 {
+                context.addLine(to: points[1])
+            } else if points.count == 3 {
+                // 3个点使用简单平滑
+                let p0 = points[0]
+                let p1 = points[1]
+                let p2 = points[2]
+                
+                let cp1 = CGPoint(
+                    x: p0.x + (p1.x - p0.x) * 0.7,
+                    y: p0.y + (p1.y - p0.y) * 0.7
+                )
+                let cp2 = CGPoint(
+                    x: p1.x - (p2.x - p1.x) * 0.3,
+                    y: p1.y - (p2.y - p1.y) * 0.3
+                )
+                context.addCurve(to: p1, control1: cp1, control2: cp2)
+                
+                let cp3 = CGPoint(
+                    x: p1.x + (p2.x - p1.x) * 0.3,
+                    y: p1.y + (p2.y - p1.y) * 0.3
+                )
+                let cp4 = CGPoint(
+                    x: p2.x - (p2.x - p1.x) * 0.3,
+                    y: p2.y - (p2.y - p1.y) * 0.3
+                )
+                context.addCurve(to: p2, control1: cp3, control2: cp4)
+            } else {
+                // 4个及以上点使用 Hermite 插值（非常平滑）
+                for i in 0..<(points.count - 1) {
+                    let p0 = i > 0 ? points[i - 1] : points[i]
+                    let p1 = points[i]
+                    let p2 = points[i + 1]
+                    let p3 = i < points.count - 2 ? points[i + 2] : points[i + 1]
+                    
+                    // 计算切线（Catmull-Rom 风格）
+                    let tension: CGFloat = 0.8  // 0.8 = 更平滑，0.5 = 标准 Catmull-Rom
+                    
+                    let m1x = (p2.x - p0.x) * tension
+                    let m1y = (p2.y - p0.y) * tension
+                    let m2x = (p3.x - p1.x) * tension
+                    let m2y = (p3.y - p1.y) * tension
+                    
+                    let cp1 = CGPoint(
+                        x: p1.x + m1x / 3.0,
+                        y: p1.y + m1y / 3.0
+                    )
+                    let cp2 = CGPoint(
+                        x: p2.x - m2x / 3.0,
+                        y: p2.y - m2y / 3.0
+                    )
+                    
+                    context.addCurve(to: p2, control1: cp1, control2: cp2)
+                }
+            }
+            
+            // 终点（回到底部）
+            context.addLine(to: CGPoint(x: points.last!.x, y: rect.minY))
+            context.closePath()
+            context.fillPath()
+        }
+        
+        // 绘制平滑曲线（使用贝塞尔曲线）
         context.setStrokeColor(NSColor.systemBlue.cgColor)
-        context.setLineWidth(2.0)
+        context.setLineWidth(2.5)  // 增加线条宽度，使曲线更明显
         context.setLineJoin(.round)
         context.setLineCap(.round)
         
-        context.beginPath()
-        let startPoint = chargingPoints.first!
-        let startX = rect.minX + CGFloat((startPoint.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-        let startY = rect.minY + CGFloat((startPoint.power - minPower) / powerDiff) * rect.height
-        context.move(to: CGPoint(x: startX, y: startY))
+        // 启用高质量渲染
+        context.setShouldAntialias(true)
+        context.setAllowsAntialiasing(true)
         
-        for point in chargingPoints.dropFirst() {
-            let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-            let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
-            context.addLine(to: CGPoint(x: x, y: y))
+        // 使用平滑曲线绘制（复用之前计算的points数组）
+        if points.count > 1 {
+            context.beginPath()
+            context.move(to: points[0])
+            
+            if points.count == 2 {
+                // 只有两个点,直接连线
+                context.addLine(to: points[1])
+            } else if points.count == 3 {
+                // 3个点使用简单平滑
+                let p0 = points[0]
+                let p1 = points[1]
+                let p2 = points[2]
+                
+                let cp1 = CGPoint(
+                    x: p0.x + (p1.x - p0.x) * 0.7,
+                    y: p0.y + (p1.y - p0.y) * 0.7
+                )
+                let cp2 = CGPoint(
+                    x: p1.x - (p2.x - p1.x) * 0.3,
+                    y: p1.y - (p2.y - p1.y) * 0.3
+                )
+                context.addCurve(to: p1, control1: cp1, control2: cp2)
+                
+                let cp3 = CGPoint(
+                    x: p1.x + (p2.x - p1.x) * 0.3,
+                    y: p1.y + (p2.y - p1.y) * 0.3
+                )
+                let cp4 = CGPoint(
+                    x: p2.x - (p2.x - p1.x) * 0.3,
+                    y: p2.y - (p2.y - p1.y) * 0.3
+                )
+                context.addCurve(to: p2, control1: cp3, control2: cp4)
+            } else {
+                // 4个及以上点使用 Hermite 插值（非常平滑）
+                for i in 0..<(points.count - 1) {
+                    let p0 = i > 0 ? points[i - 1] : points[i]
+                    let p1 = points[i]
+                    let p2 = points[i + 1]
+                    let p3 = i < points.count - 2 ? points[i + 2] : points[i + 1]
+                    
+                    // 计算切线（Catmull-Rom 风格）
+                    let tension: CGFloat = 0.8  // 0.8 = 更平滑，0.5 = 标准 Catmull-Rom
+                    
+                    let m1x = (p2.x - p0.x) * tension
+                    let m1y = (p2.y - p0.y) * tension
+                    let m2x = (p3.x - p1.x) * tension
+                    let m2y = (p3.y - p1.y) * tension
+                    
+                    let cp1 = CGPoint(
+                        x: p1.x + m1x / 3.0,
+                        y: p1.y + m1y / 3.0
+                    )
+                    let cp2 = CGPoint(
+                        x: p2.x - m2x / 3.0,
+                        y: p2.y - m2y / 3.0
+                    )
+                    
+                    context.addCurve(to: p2, control1: cp1, control2: cp2)
+                }
+            }
+            
+            context.strokePath()
         }
         
-        context.strokePath()
-        
-        // 绘制数据点
-        context.setFillColor(NSColor.systemBlue.cgColor)
-        let pointRadius: CGFloat = 3
-        
-        for point in chargingPoints {
-            let x = rect.minX + CGFloat((point.timestamp.timeIntervalSince1970 - startTime) / timeDiff) * rect.width
-            let y = rect.minY + CGFloat((point.power - minPower) / powerDiff) * rect.height
-            context.fillEllipse(in: NSRect(x: x - pointRadius, y: y - pointRadius, width: pointRadius * 2, height: pointRadius * 2))
+        // 绘制数据点（仅在采样后数据点较少时显示）
+        // 数据点太多会显得杂乱，影响曲线的流畅视觉效果
+        if points.count <= 20 {
+            context.setFillColor(NSColor.systemBlue.cgColor)
+            let pointRadius: CGFloat = 3
+            
+            for point in points {
+                context.fillEllipse(in: NSRect(x: point.x - pointRadius, y: point.y - pointRadius, width: pointRadius * 2, height: pointRadius * 2))
+            }
         }
     }
     
