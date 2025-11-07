@@ -188,6 +188,10 @@ class BatteryChartView: NSView {
             print("📊 数据点数量: \(points.count)")
         }
         
+        // 设置裁剪区域，防止曲线超出底部（功率不能为负）
+        context.saveGState()
+        context.clip(to: rect)
+        
         // 绘制区域填充（使用平滑曲线）
         if points.count > 1 {
             context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.1).cgColor)
@@ -345,6 +349,9 @@ class BatteryChartView: NSView {
                 context.fillEllipse(in: NSRect(x: point.x - pointRadius, y: point.y - pointRadius, width: pointRadius * 2, height: pointRadius * 2))
             }
         }
+        
+        // 恢复图形状态（移除裁剪）
+        context.restoreGState()
     }
     
     private func prepareData() {
