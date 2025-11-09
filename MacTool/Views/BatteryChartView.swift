@@ -46,12 +46,26 @@ class BatteryChartView: NSView {
     }
     
     private func setupView() {
-        // 设置背景色
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        // 不使用 layer 背景色，在 draw 方法中绘制
         
         // 启用鼠标跟踪
         updateTrackingAreas()
+        
+        // 监听主题变更
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: ThemeManager.themeDidChangeNotification,
+            object: nil
+        )
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func themeDidChange() {
+        needsDisplay = true
     }
     
     override func updateTrackingAreas() {
@@ -101,7 +115,7 @@ class BatteryChartView: NSView {
     // MARK: - Drawing Methods
     
     private func drawBackground(context: CGContext, rect: NSRect) {
-        context.setFillColor(NSColor.windowBackgroundColor.cgColor)
+        context.setFillColor(ThemeColors.backgroundColor.cgColor)
         context.fill(rect)
     }
     
@@ -109,7 +123,7 @@ class BatteryChartView: NSView {
         let message = "暂无数据"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 16),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: ThemeColors.secondaryLabelColor
         ]
         let attributedString = NSAttributedString(string: message, attributes: attributes)
         let stringSize = attributedString.size()
@@ -130,7 +144,7 @@ class BatteryChartView: NSView {
     }
     
     private func drawGrid(context: CGContext, rect: NSRect) {
-        context.setStrokeColor(NSColor.gridColor.cgColor)
+        context.setStrokeColor(ThemeColors.chartGridColor.cgColor)
         context.setLineWidth(0.5)
         
         // 绘制水平网格线
@@ -195,7 +209,7 @@ class BatteryChartView: NSView {
         
         // 绘制区域填充（使用平滑曲线）
         if points.count > 1 {
-            context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.1).cgColor)
+            context.setFillColor(ThemeColors.chartLineColor.withAlphaComponent(0.1).cgColor)
             context.beginPath()
             
             // 起点（从底部开始）
@@ -300,7 +314,7 @@ class BatteryChartView: NSView {
         }
         
         // 绘制平滑曲线（使用贝塞尔曲线）
-        context.setStrokeColor(NSColor.systemBlue.cgColor)
+        context.setStrokeColor(ThemeColors.chartLineColor.cgColor)
         context.setLineWidth(2.5)  // 增加线条宽度，使曲线更明显
         context.setLineJoin(.round)
         context.setLineCap(.round)
@@ -410,7 +424,7 @@ class BatteryChartView: NSView {
         // 绘制数据点（仅在采样后数据点较少时显示）
         // 数据点太多会显得杂乱，影响曲线的流畅视觉效果
         if points.count <= 20 {
-            context.setFillColor(NSColor.systemBlue.cgColor)
+            context.setFillColor(ThemeColors.chartLineColor.cgColor)
             let pointRadius: CGFloat = 3
             
             for point in points {
@@ -560,7 +574,7 @@ class BatteryChartView: NSView {
         let y = rect.minY + CGFloat((point.power - powerRange.min) / max(powerDiff, 1.0)) * rect.height
         
         // 绘制交叉线
-        context.setStrokeColor(NSColor.systemOrange.withAlphaComponent(0.5).cgColor)
+        context.setStrokeColor(ThemeColors.warningColor.withAlphaComponent(0.5).cgColor)
         context.setLineWidth(1.0)
         context.setLineDash(phase: 0, lengths: [5, 5])
         
@@ -573,7 +587,7 @@ class BatteryChartView: NSView {
         context.setLineDash(phase: 0, lengths: [])
         
         // 绘制数据点
-        context.setFillColor(NSColor.systemOrange.cgColor)
+        context.setFillColor(ThemeColors.warningColor.cgColor)
         let pointRadius: CGFloat = 5
         context.fillEllipse(in: NSRect(x: x - pointRadius, y: y - pointRadius, width: pointRadius * 2, height: pointRadius * 2))
         
@@ -597,7 +611,7 @@ class BatteryChartView: NSView {
         
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: ThemeColors.labelColor
         ]
         let attributedString = NSAttributedString(string: tooltipText, attributes: attributes)
         let size = attributedString.size()
@@ -615,8 +629,8 @@ class BatteryChartView: NSView {
         }
         
         // 绘制背景
-        context.setFillColor(NSColor.controlBackgroundColor.withAlphaComponent(0.95).cgColor)
-        context.setStrokeColor(NSColor.separatorColor.cgColor)
+        context.setFillColor(ThemeColors.secondaryBackgroundColor.withAlphaComponent(0.95).cgColor)
+        context.setStrokeColor(ThemeColors.separatorColor.cgColor)
         context.setLineWidth(1.0)
         
         let boxRect = NSRect(origin: boxOrigin, size: boxSize)
@@ -642,7 +656,7 @@ class BatteryChartView: NSView {
         
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: ThemeColors.chartTextColor
         ]
         
         // Y轴是功率（左侧，顶部为最大值，底部为0）

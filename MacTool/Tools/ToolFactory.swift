@@ -14,6 +14,8 @@ class ToolFactory {
         switch type {
         case .power:
             return PowerViewController()
+        case .theme:
+            return ThemeViewController()
         }
     }
 }

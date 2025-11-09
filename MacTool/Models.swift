@@ -13,11 +13,14 @@ import SQLite3
 // 功能类型枚举
 enum ToolType: Int, CaseIterable {
     case power = 0
+    case theme = 1
     
     var identifier: String {
         switch self {
         case .power:
             return "power"
+        case .theme:
+            return "theme"
         }
     }
     
@@ -25,6 +28,8 @@ enum ToolType: Int, CaseIterable {
         switch self {
         case .power:
             return "充电功率"
+        case .theme:
+            return "主题设置"
         }
     }
     
@@ -32,6 +37,8 @@ enum ToolType: Int, CaseIterable {
         switch self {
         case .power:
             return "🔋"
+        case .theme:
+            return "🎨"
         }
     }
 }
