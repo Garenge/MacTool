@@ -185,8 +185,8 @@ class BatteryChartView: NSView {
         }
         
         // 如果数据点太多，进行采样以获得更好的平滑效果
-        // 关键：数据点越少，平滑效果越明显
-        let maxPoints = 30  // 限制为30个点，使平滑效果更明显
+        // 使用 maxVisiblePoints 作为上限
+        let maxPoints = maxVisiblePoints
         if points.count > maxPoints {
             let step = max(1, points.count / maxPoints)
             var sampledPoints: [CGPoint] = []
@@ -492,7 +492,7 @@ class BatteryChartView: NSView {
         // 选择桶宽（秒）
         let bucket: TimeInterval
         if duration <= 3600 { // 1小时
-            bucket = 30 // 30秒/点 ~120点
+            bucket = 5 // 5秒/点 ~720点
         } else if duration <= 24*3600 { // 24小时
             bucket = 120 // 2分钟/点 ~720点
         } else if duration <= 7*24*3600 { // 7天
@@ -516,23 +516,38 @@ class BatteryChartView: NSView {
             buckets[idx].append(p)
         }
         
+        // 先计算每个非空桶的聚合数据
+        struct Agg { let power: Double; let voltage: Double; let current: Double; let pct: Int; let charging: Bool }
+        var aggs: [Agg?] = Array(repeating: nil, count: bucketCount)
+        for i in 0..<bucketCount {
+            let items = buckets[i]
+            if !items.isEmpty {
+                let count = Double(items.count)
+                let avgPower = items.reduce(0.0) { $0 + $1.power } / count
+                let avgVoltage = items.reduce(0.0) { $0 + $1.voltage } / count
+                let avgCurrent = items.reduce(0.0) { $0 + $1.current } / count
+                let avgPct = Int((items.reduce(0.0) { $0 + Double($1.percentage) } / count).rounded())
+                let anyCharging = items.contains(where: { $0.isCharging && $0.power > 0 })
+                aggs[i] = Agg(power: max(0, avgPower), voltage: avgVoltage, current: avgCurrent, pct: avgPct, charging: anyCharging)
+            }
+        }
+        
+        // 生成结果：空桶用前后非空桶的平均值进行插值；如果一侧缺失，用另一侧值；都缺则补零
         var result: [BatteryDataPoint] = []
         result.reserveCapacity(bucketCount)
         var lastPercentage: Int = points.last?.percentage ?? 0
-        
         for i in 0..<bucketCount {
             let bucketStart = start + Double(i) * bucket
             let bucketMid = bucketStart + bucket/2
-            let items = buckets[i]
-            if items.isEmpty {
-                // 空白桶：补零点
+            if let a = aggs[i] {
+                lastPercentage = a.pct
                 let dp = BatteryDataPoint(
                     timestamp: Date(timeIntervalSince1970: bucketMid),
-                    voltage: 0,
-                    current: 0,
-                    power: 0,
-                    percentage: lastPercentage,
-                    isCharging: false,
+                    voltage: a.voltage,
+                    current: a.current,
+                    power: a.power,
+                    percentage: a.pct,
+                    isCharging: a.charging,
                     temperature: nil,
                     cycleCount: nil,
                     designCapacity: nil,
@@ -541,21 +556,44 @@ class BatteryChartView: NSView {
                 )
                 result.append(dp)
             } else {
-                // 聚合：取平均功率、平均电压/电流，电量用平均四舍五入
-                let count = Double(items.count)
-                let avgPower = items.reduce(0.0) { $0 + $1.power } / count
-                let avgVoltage = items.reduce(0.0) { $0 + $1.voltage } / count
-                let avgCurrent = items.reduce(0.0) { $0 + $1.current } / count
-                let avgPct = Int((items.reduce(0.0) { $0 + Double($1.percentage) } / count).rounded())
-                lastPercentage = avgPct
-                let anyCharging = items.contains(where: { $0.isCharging && $0.power > 0 })
+                // 查找前后最近的非空聚合
+                var prevIndex: Int? = nil
+                var nextIndex: Int? = nil
+                var j = i - 1
+                while j >= 0 {
+                    if aggs[j] != nil { prevIndex = j; break }
+                    j -= 1
+                }
+                j = i + 1
+                while j < bucketCount {
+                    if aggs[j] != nil { nextIndex = j; break }
+                    j += 1
+                }
+                let interp: Agg
+                if let pi = prevIndex, let ni = nextIndex, let pa = aggs[pi], let na = aggs[ni] {
+                    // 前后平均
+                    let avgPower = (pa.power + na.power) / 2.0
+                    let avgVoltage = (pa.voltage + na.voltage) / 2.0
+                    let avgCurrent = (pa.current + na.current) / 2.0
+                    let avgPct = Int(((Double(pa.pct) + Double(na.pct)) / 2.0).rounded())
+                    let anyCharging = pa.charging || na.charging
+                    interp = Agg(power: max(0, avgPower), voltage: avgVoltage, current: avgCurrent, pct: avgPct, charging: anyCharging)
+                } else if let pi = prevIndex, let pa = aggs[pi] {
+                    interp = pa
+                } else if let ni = nextIndex, let na = aggs[ni] {
+                    interp = na
+                } else {
+                    // 无前后数据，补零，电量沿用上一个已知值
+                    interp = Agg(power: 0, voltage: 0, current: 0, pct: lastPercentage, charging: false)
+                }
+                lastPercentage = interp.pct
                 let dp = BatteryDataPoint(
                     timestamp: Date(timeIntervalSince1970: bucketMid),
-                    voltage: avgVoltage,
-                    current: avgCurrent,
-                    power: max(0, avgPower),
-                    percentage: avgPct,
-                    isCharging: anyCharging,
+                    voltage: interp.voltage,
+                    current: interp.current,
+                    power: interp.power,
+                    percentage: interp.pct,
+                    isCharging: interp.charging,
                     temperature: nil,
                     cycleCount: nil,
                     designCapacity: nil,
