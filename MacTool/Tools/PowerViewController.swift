@@ -7,30 +7,7 @@
 
 import Cocoa
 
-/// 翻转的视图类（坐标从顶部开始）
-class FlippedView: NSView {
-    override var isFlipped: Bool {
-        return true  // 使坐标系统从顶部开始
-    }
-}
-
-/// 统计窗口控制器 - 管理窗口生命周期
-class StatisticsWindowController: NSWindowController, NSWindowDelegate {
-    
-    override func windowDidLoad() {
-        super.windowDidLoad()
-        window?.delegate = self
-    }
-    
-    func windowWillClose(_ notification: Notification) {
-        // 窗口关闭时自动清理
-        print("[StatisticsWindowController] 📊 统计窗口即将关闭")
-    }
-    
-    deinit {
-        print("[StatisticsWindowController] 📊 窗口控制器已释放")
-    }
-}
+// FlippedView 与 StatisticsWindowController 已迁移至单独文件，参见 Tools/FlippedView.swift 与 Tools/StatisticsWindowController.swift
 
 class PowerViewController: NSViewController {
     
@@ -511,7 +488,6 @@ class PowerViewController: NSViewController {
         let containerView = FlippedView(frame: NSRect(x: 0, y: 0, width: 810, height: containerHeight))
         containerView.translatesAutoresizingMaskIntoConstraints = false
         containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
         
         // 先设置 documentView
         scrollView.documentView = containerView
