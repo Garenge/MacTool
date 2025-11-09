@@ -45,6 +45,7 @@ class PowerViewController: NSViewController {
     var statisticsButton: NSButton!
     var chartView: BatteryChartView!
     var scrollView: NSScrollView!
+    var infoPanel: NSView!
     private var selectedStartDate: Date?
     private var selectedEndDate: Date?
     var rangeContainer: NSView!
@@ -62,6 +63,7 @@ class PowerViewController: NSViewController {
     var startDatePicker: NSDatePicker!
     var endDatePicker: NSDatePicker!
     var applyRangeButton: NSButton!
+    var infoPanelHeightConstraint: NSLayoutConstraint!
     
     // 强引用统计窗口控制器，防止被过早释放
     private var statisticsWindowControllers: [StatisticsWindowController] = []
@@ -81,10 +83,21 @@ class PowerViewController: NSViewController {
         super.viewWillAppear()
         // 显示当前数据
         updateUIWithLatestData()
+        // 更新背景色以适应当前主题
+        updateInfoPanelBackgroundColor()
+    }
+    
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // 在视图完全显示后再次检查主题，确保背景色正确
+        updateInfoPanelBackgroundColor()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        DistributedNotificationCenter.default.removeObserver(self)
+        // 移除 KVO 观察者
+        NSApp.removeObserver(self, forKeyPath: "effectiveAppearance")
     }
     
     // MARK: - Setup
@@ -97,9 +110,62 @@ class PowerViewController: NSViewController {
             name: .powerDataUpdated,
             object: nil
         )
+        
+        // 监听应用内部主题变更通知（通过 ThemeManager）
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceChanged),
+            name: ThemeManager.themeDidChangeNotification,
+            object: nil
+        )
+        
+        // 监听系统外观变化通知（系统设置中切换主题）
+        DistributedNotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSystemAppearanceChanged),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+        
+        // 使用 KVO 监听 NSApp.effectiveAppearance 的变化
+        NSApp.addObserver(
+            self,
+            forKeyPath: "effectiveAppearance",
+            options: [.new, .old],
+            context: nil
+        )
+    }
+    
+    @objc private func handleAppearanceChanged() {
+        // 当应用主题变化时，更新背景色
+        DispatchQueue.main.async { [weak self] in
+            self?.updateInfoPanelBackgroundColor()
+        }
+    }
+    
+    @objc private func handleSystemAppearanceChanged() {
+        // 当系统主题变化时，更新背景色
+        DispatchQueue.main.async { [weak self] in
+            self?.updateInfoPanelBackgroundColor()
+        }
+    }
+    
+    // KVO 监听 NSApp.effectiveAppearance 变化
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "effectiveAppearance" && object as? NSApplication == NSApp {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateInfoPanelBackgroundColor()
+            }
+        } else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+        }
     }
     
     func setupUI() {
+        // 设置主视图背景色为蓝色
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.systemBlue.cgColor
+        
         // 创建滚动视图（用于图表）
         scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -132,10 +198,10 @@ class PowerViewController: NSViewController {
         ])
         
         // 创建顶部信息面板
-        let infoPanel = NSView()
+        infoPanel = NSView()
         infoPanel.translatesAutoresizingMaskIntoConstraints = false
         infoPanel.wantsLayer = true
-        infoPanel.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        updateInfoPanelBackgroundColor()
         view.addSubview(infoPanel)
         
         // 创建功率标签
@@ -192,20 +258,25 @@ class PowerViewController: NSViewController {
         // 选项1：将三项动作收纳到“更多”菜单，隐藏原按钮
         statisticsButton.isHidden = true
 
-        // 第一排新增“更多”菜单
+        // 第一排新增“更多”下拉菜单（不保留选中态，始终展示“更多”文字）
         moreButton = NSPopUpButton(title: "更多", target: nil, action: nil)
         moreButton.controlSize = .regular
         moreButton.translatesAutoresizingMaskIntoConstraints = false
+        moreButton.pullsDown = true
         let moreMenu = NSMenu()
+        // 标题项：仅用于展示按钮文字，不可选
+        let titleItem = NSMenuItem(title: "更多", action: nil, keyEquivalent: "")
+        titleItem.isEnabled = false
+        moreMenu.addItem(titleItem)
+        // 三个操作项：打开数据库、清空数据、查看统计（不显示勾选）
         let openItem = NSMenuItem(title: "打开数据库", action: #selector(openDatabaseFolder), keyEquivalent: "")
         openItem.target = self
-        let clearItem = NSMenuItem(title: "清空数据库", action: #selector(clearDatabase), keyEquivalent: "")
+        moreMenu.addItem(openItem)
+        let clearItem = NSMenuItem(title: "清空数据", action: #selector(clearDatabase), keyEquivalent: "")
         clearItem.target = self
+        moreMenu.addItem(clearItem)
         let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStatistics), keyEquivalent: "")
         statsItem.target = self
-        moreMenu.addItem(openItem)
-        moreMenu.addItem(clearItem)
-        moreMenu.addItem(NSMenuItem.separator())
         moreMenu.addItem(statsItem)
         moreButton.menu = moreMenu
         buttonContainer.addSubview(moreButton)
@@ -298,12 +369,13 @@ class PowerViewController: NSViewController {
         headerStack.addArrangedSubview(dateContainer)
 
         // 基本约束：infoPanel 和 headerStack
+        infoPanelHeightConstraint = infoPanel.heightAnchor.constraint(equalToConstant: 210)
         NSLayoutConstraint.activate([
             // 信息面板铺满顶部
             infoPanel.topAnchor.constraint(equalTo: view.topAnchor),
             infoPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             infoPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            infoPanel.heightAnchor.constraint(equalToConstant: 180),
+            infoPanelHeightConstraint,
 
             // 图表滚动区
             scrollView.topAnchor.constraint(equalTo: infoPanel.bottomAnchor, constant: 0),
@@ -355,6 +427,7 @@ class PowerViewController: NSViewController {
         endDatePicker.dateValue = now
         // 初始收起第三排
         dateContainer.isHidden = true
+        infoPanelHeightConstraint.constant = 180
     }
     
     // MARK: - Actions
@@ -1178,6 +1251,25 @@ class PowerViewController: NSViewController {
         updateChart()
     }
     
+    /// 更新 infoPanel 的背景色，根据当前主题（浅色/深色模式）
+    private func updateInfoPanelBackgroundColor() {
+        guard let infoPanel = infoPanel else { return }
+        
+        // 强制刷新 appearance 以确保颜色正确
+        infoPanel.appearance = NSApp.effectiveAppearance
+        
+        // 判断当前是否为深色模式
+        let isDarkMode: Bool
+        if #available(macOS 10.14, *) {
+            isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        } else {
+            isDarkMode = false
+        }
+        
+        // 根据主题设置颜色：深色模式使用文本背景色，浅色模式使用白色
+        infoPanel.layer?.backgroundColor = isDarkMode ? NSColor.textBackgroundColor.cgColor : NSColor.white.cgColor
+    }
+    
     private func updateChart() {
         // 若已选择自定义时间段，则按该范围展示；否则默认最近1小时
         if let start = selectedStartDate, let end = selectedEndDate {
@@ -1252,6 +1344,11 @@ class PowerViewController: NSViewController {
         let hidden = !dateContainer.isHidden
         dateContainer.isHidden = hidden
         disclosureButton.title = hidden ? "自定义时间 ▸" : "自定义时间 ▾"
+        infoPanelHeightConstraint.constant = hidden ? 180 : 210
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            self.view.layoutSubtreeIfNeeded()
+        }, completionHandler: nil)
     }
 
     @objc private func applyCustomRange() {
