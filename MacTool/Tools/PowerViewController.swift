@@ -45,6 +45,23 @@ class PowerViewController: NSViewController {
     var statisticsButton: NSButton!
     var chartView: BatteryChartView!
     var scrollView: NSScrollView!
+    private var selectedStartDate: Date?
+    private var selectedEndDate: Date?
+    var rangeContainer: NSView!
+    var dateContainer: NSView!
+    var segmentedControl: NSSegmentedControl!
+    var headlineContainer: NSView!
+    var headlineStack: NSStackView!
+    var controlsStack: NSStackView!
+    var moreButton: NSPopUpButton!
+    var disclosureButton: NSButton!
+    var lastHourButton: NSButton!
+    var last24hButton: NSButton!
+    var last7dButton: NSButton!
+    var todayButton: NSButton!
+    var startDatePicker: NSDatePicker!
+    var endDatePicker: NSDatePicker!
+    var applyRangeButton: NSButton!
     
     // 强引用统计窗口控制器，防止被过早释放
     private var statisticsWindowControllers: [StatisticsWindowController] = []
@@ -55,6 +72,9 @@ class PowerViewController: NSViewController {
         super.viewDidLoad()
         setupUI()
         setupObservers()
+        // 默认选中“近1小时”并刷新
+        segmentedControl.selectedSegment = 0
+        selectLastHour()
     }
     
     override func viewWillAppear() {
@@ -169,59 +189,172 @@ class PowerViewController: NSViewController {
         statisticsButton.bezelStyle = .rounded
         statisticsButton.translatesAutoresizingMaskIntoConstraints = false
         buttonContainer.addSubview(statisticsButton)
+        // 选项1：将三项动作收纳到“更多”菜单，隐藏原按钮
+        statisticsButton.isHidden = true
+
+        // 第一排新增“更多”菜单
+        moreButton = NSPopUpButton(title: "更多", target: nil, action: nil)
+        moreButton.controlSize = .regular
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
+        let moreMenu = NSMenu()
+        let openItem = NSMenuItem(title: "打开数据库", action: #selector(openDatabaseFolder), keyEquivalent: "")
+        openItem.target = self
+        let clearItem = NSMenuItem(title: "清空数据库", action: #selector(clearDatabase), keyEquivalent: "")
+        clearItem.target = self
+        let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStatistics), keyEquivalent: "")
+        statsItem.target = self
+        moreMenu.addItem(openItem)
+        moreMenu.addItem(clearItem)
+        moreMenu.addItem(NSMenuItem.separator())
+        moreMenu.addItem(statsItem)
+        moreButton.menu = moreMenu
+        buttonContainer.addSubview(moreButton)
+        // 隐藏旧按钮以减少拥挤
+        openDatabaseButton.isHidden = true
+        clearDatabaseButton.isHidden = true
+
+        // 分段控件（与刷新/更多同一行，放在左侧）
+        segmentedControl = NSSegmentedControl(labels: ["近1小时", "近24小时", "近7天", "今天"], trackingMode: .selectOne, target: self, action: #selector(selectSegmentChanged))
+        segmentedControl.controlSize = .regular
+        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        // 先不直接添加，后续加入 controlsStack
+        // 隐藏旧快捷按钮
+        lastHourButton = NSButton()
+        last24hButton = NSButton()
+        last7dButton = NSButton()
+        todayButton = NSButton()
+        lastHourButton.isHidden = true
+        last24hButton.isHidden = true
+        last7dButton.isHidden = true
+        todayButton.isHidden = true
+
+        // 第三排容器：自定义日期区间（可折叠）
+        disclosureButton = NSButton(title: "自定义时间 ▸", target: self, action: #selector(toggleDateContainer))
+        disclosureButton.bezelStyle = .rounded
+        disclosureButton.controlSize = .regular
+        disclosureButton.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(disclosureButton)
+
+        dateContainer = NSView()
+        dateContainer.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(dateContainer)
+
+        startDatePicker = NSDatePicker()
+        startDatePicker.controlSize = .small
+        startDatePicker.datePickerStyle = .textFieldAndStepper
+        startDatePicker.datePickerElements = [.yearMonthDay, .hourMinute]
+        startDatePicker.translatesAutoresizingMaskIntoConstraints = false
+        dateContainer.addSubview(startDatePicker)
+
+        endDatePicker = NSDatePicker()
+        endDatePicker.controlSize = .small
+        endDatePicker.datePickerStyle = .textFieldAndStepper
+        endDatePicker.datePickerElements = [.yearMonthDay, .hourMinute]
+        endDatePicker.translatesAutoresizingMaskIntoConstraints = false
+        dateContainer.addSubview(endDatePicker)
+
+        applyRangeButton = NSButton(title: "应用", target: self, action: #selector(applyCustomRange))
+        applyRangeButton.bezelStyle = .rounded
+        applyRangeButton.controlSize = .regular
+        applyRangeButton.translatesAutoresizingMaskIntoConstraints = false
+        dateContainer.addSubview(applyRangeButton)
         
-        // 布局约束
+        // =========== 统一居中布局：headerStack = 垂直栈 ===========
+        let headerStack = NSStackView()
+        headerStack.orientation = .vertical
+        headerStack.spacing = 6
+        headerStack.alignment = .centerX
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(headerStack)
+
+        // 第一行：功率 + 电量（水平栈）
+        headlineStack = NSStackView(views: [powerLabel, batteryLabel])
+        headlineStack.orientation = .horizontal
+        headlineStack.spacing = 16
+        headlineStack.alignment = .centerY
+        headlineStack.distribution = .equalCentering
+        headlineStack.translatesAutoresizingMaskIntoConstraints = false
+        headerStack.addArrangedSubview(headlineStack)
+
+        // 第二行：状态标签
+        headerStack.addArrangedSubview(statusLabel)
+
+        // 第三行：分段 + 弹性 + 刷新 + 更多（水平栈）
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        controlsStack = NSStackView(views: [segmentedControl, spacer, refreshButton, moreButton])
+        controlsStack.orientation = .horizontal
+        controlsStack.spacing = 10
+        controlsStack.alignment = .centerY
+        controlsStack.distribution = .fill
+        controlsStack.translatesAutoresizingMaskIntoConstraints = false
+        headerStack.addArrangedSubview(controlsStack)
+
+        // 第四行：折叠按钮
+        headerStack.addArrangedSubview(disclosureButton)
+
+        // 第五行：日期容器（内部已有子控件）
+        headerStack.addArrangedSubview(dateContainer)
+
+        // 基本约束：infoPanel 和 headerStack
         NSLayoutConstraint.activate([
-            // 信息面板
+            // 信息面板铺满顶部
             infoPanel.topAnchor.constraint(equalTo: view.topAnchor),
             infoPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             infoPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            infoPanel.heightAnchor.constraint(equalToConstant: 220),
-            
-            // 滚动视图（增加顶部间距，让按钮下方有更多空间）
+            infoPanel.heightAnchor.constraint(equalToConstant: 180),
+
+            // 图表滚动区
             scrollView.topAnchor.constraint(equalTo: infoPanel.bottomAnchor, constant: 0),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
-            // 功率标签
-            powerLabel.topAnchor.constraint(equalTo: infoPanel.topAnchor, constant: 15),
-            powerLabel.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
-            
-            // 电量标签（在功率和状态标签之间）
-            batteryLabel.topAnchor.constraint(equalTo: powerLabel.bottomAnchor, constant: 5),
-            batteryLabel.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
-            
-            // 状态标签
-            statusLabel.topAnchor.constraint(equalTo: batteryLabel.bottomAnchor, constant: 8),
-            statusLabel.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
-            
-            // 按钮容器
-            buttonContainer.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 15),
-            buttonContainer.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
-            buttonContainer.heightAnchor.constraint(equalToConstant: 30),
-            
-            // 刷新按钮
-            refreshButton.leadingAnchor.constraint(equalTo: buttonContainer.leadingAnchor),
-            refreshButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
-            refreshButton.widthAnchor.constraint(equalToConstant: 80),
-            
-            // 打开数据库按钮
-            openDatabaseButton.leadingAnchor.constraint(equalTo: refreshButton.trailingAnchor, constant: 10),
-            openDatabaseButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
-            openDatabaseButton.widthAnchor.constraint(equalToConstant: 100),
-            
-            // 清空数据库按钮
-            clearDatabaseButton.leadingAnchor.constraint(equalTo: openDatabaseButton.trailingAnchor, constant: 10),
-            clearDatabaseButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
-            clearDatabaseButton.widthAnchor.constraint(equalToConstant: 100),
-            
-            // 查看统计按钮
-            statisticsButton.leadingAnchor.constraint(equalTo: clearDatabaseButton.trailingAnchor, constant: 10),
-            statisticsButton.centerYAnchor.constraint(equalTo: buttonContainer.centerYAnchor),
-            statisticsButton.widthAnchor.constraint(equalToConstant: 110),
-            statisticsButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor)
+
+            // 头部栈整体居中
+            headerStack.topAnchor.constraint(equalTo: infoPanel.topAnchor, constant: 12),
+            headerStack.centerXAnchor.constraint(equalTo: infoPanel.centerXAnchor),
+            headerStack.leadingAnchor.constraint(greaterThanOrEqualTo: infoPanel.leadingAnchor, constant: 20),
+            headerStack.trailingAnchor.constraint(lessThanOrEqualTo: infoPanel.trailingAnchor, constant: -20),
+
+            // 日期容器固定高度（适配常规按钮）
+            dateContainer.heightAnchor.constraint(equalToConstant: 28),
+
+            // 控件宽度
+            refreshButton.widthAnchor.constraint(equalToConstant: 72),
+            moreButton.widthAnchor.constraint(equalToConstant: 72)
         ])
+
+        // 顶部行控件增加高度（约 +10px）
+        NSLayoutConstraint.activate([
+            segmentedControl.heightAnchor.constraint(equalToConstant: 32),
+            refreshButton.heightAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32),
+            disclosureButton.heightAnchor.constraint(equalToConstant: 32)
+        ])
+
+        // 日期内部的横向排布
+        NSLayoutConstraint.activate([
+            startDatePicker.leadingAnchor.constraint(equalTo: dateContainer.leadingAnchor),
+            startDatePicker.centerYAnchor.constraint(equalTo: dateContainer.centerYAnchor),
+            startDatePicker.widthAnchor.constraint(equalToConstant: 160),
+
+            endDatePicker.leadingAnchor.constraint(equalTo: startDatePicker.trailingAnchor, constant: 6),
+            endDatePicker.centerYAnchor.constraint(equalTo: dateContainer.centerYAnchor),
+            endDatePicker.widthAnchor.constraint(equalToConstant: 160),
+
+            applyRangeButton.leadingAnchor.constraint(equalTo: endDatePicker.trailingAnchor, constant: 6),
+            applyRangeButton.centerYAnchor.constraint(equalTo: dateContainer.centerYAnchor),
+            applyRangeButton.widthAnchor.constraint(equalToConstant: 60),
+            applyRangeButton.trailingAnchor.constraint(equalTo: dateContainer.trailingAnchor)
+        ])
+
+        // 初始化日期选择器默认值
+        let now = Date()
+        startDatePicker.dateValue = now.addingTimeInterval(-3600)
+        endDatePicker.dateValue = now
+        // 初始收起第三排
+        dateContainer.isHidden = true
     }
     
     // MARK: - Actions
@@ -1046,9 +1179,84 @@ class PowerViewController: NSViewController {
     }
     
     private func updateChart() {
-        // 获取最近1小时的数据点并更新图表
+        // 若已选择自定义时间段，则按该范围展示；否则默认最近1小时
+        if let start = selectedStartDate, let end = selectedEndDate {
+            // 确保时间顺序正确
+            let (s, e) = start <= end ? (start, end) : (end, start)
+            chartView.dataPoints = PowerHelper.shared.getDataPoints(from: s, to: e)
+            chartView.customTimeRange = (
+                start: s.timeIntervalSince1970,
+                end: e.timeIntervalSince1970
+            )
+        } else {
+            let now = Date()
+            let oneHourAgo = now.addingTimeInterval(-3600)
+            chartView.dataPoints = PowerHelper.shared.getDataPoints(from: oneHourAgo, to: now)
+            chartView.customTimeRange = nil
+        }
+    }
+
+    // 供外部设置时间范围的接口
+    func setChartRange(start: Date?, end: Date?) {
+        selectedStartDate = start
+        selectedEndDate = end
+        updateChart()
+    }
+
+    @objc private func selectLastHour() {
         let now = Date()
-        let oneHourAgo = now.addingTimeInterval(-3600) // 减去1小时（3600秒）
-        chartView.dataPoints = PowerHelper.shared.getDataPoints(from: oneHourAgo, to: now)
+        let s = now.addingTimeInterval(-3600)
+        let e = now
+        startDatePicker.dateValue = s
+        endDatePicker.dateValue = e
+        setChartRange(start: s, end: e)
+    }
+
+    @objc private func selectLast24h() {
+        let now = Date()
+        let s = now.addingTimeInterval(-24*3600)
+        let e = now
+        startDatePicker.dateValue = s
+        endDatePicker.dateValue = e
+        setChartRange(start: s, end: e)
+    }
+
+    @objc private func selectLast7d() {
+        let now = Date()
+        let s = now.addingTimeInterval(-7*24*3600)
+        let e = now
+        startDatePicker.dateValue = s
+        endDatePicker.dateValue = e
+        setChartRange(start: s, end: e)
+    }
+
+    @objc private func selectToday() {
+        let now = Date()
+        let start = Calendar.current.startOfDay(for: now)
+        startDatePicker.dateValue = start
+        endDatePicker.dateValue = now
+        setChartRange(start: start, end: now)
+    }
+
+    @objc private func selectSegmentChanged(_ sender: NSSegmentedControl) {
+        switch sender.selectedSegment {
+        case 0: selectLastHour()
+        case 1: selectLast24h()
+        case 2: selectLast7d()
+        case 3: selectToday()
+        default: break
+        }
+    }
+
+    @objc private func toggleDateContainer() {
+        let hidden = !dateContainer.isHidden
+        dateContainer.isHidden = hidden
+        disclosureButton.title = hidden ? "自定义时间 ▸" : "自定义时间 ▾"
+    }
+
+    @objc private func applyCustomRange() {
+        let s = startDatePicker.dateValue
+        let e = endDatePicker.dateValue
+        setChartRange(start: s, end: e)
     }
 }

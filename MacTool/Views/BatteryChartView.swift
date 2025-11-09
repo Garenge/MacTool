@@ -27,6 +27,7 @@ class BatteryChartView: NSView {
     private var chartRect: NSRect = .zero
     private var powerRange: (min: Double, max: Double) = (0, 100)
     private var timeRange: (start: TimeInterval, end: TimeInterval) = (0, 1)
+    var customTimeRange: (start: TimeInterval, end: TimeInterval)?
     private var chargingPoints: [BatteryDataPoint] = []
     
     // 悬停点
@@ -201,7 +202,7 @@ class BatteryChartView: NSView {
             context.move(to: CGPoint(x: points[0].x, y: rect.minY))
             context.addLine(to: points[0])
             
-            // 使用改进的贝塞尔曲线连接所有点（更平滑）
+            // 使用改进的贝塞尔曲线连接所有点（更平滑，且约束控制点防止交叉）
             if points.count == 2 {
                 context.addLine(to: points[1])
             } else if points.count == 3 {
@@ -218,7 +219,24 @@ class BatteryChartView: NSView {
                     x: p1.x - (p2.x - p1.x) * 0.3,
                     y: p1.y - (p2.y - p1.y) * 0.3
                 )
-                context.addCurve(to: p1, control1: cp1, control2: cp2)
+                // 约束控制点在段内，减少过冲
+                let minX12 = min(p0.x, p1.x)
+                let maxX12 = max(p0.x, p1.x)
+                let minY12 = min(p0.y, p1.y)
+                let maxY12 = max(p0.y, p1.y)
+                let minX23 = min(p1.x, p2.x)
+                let maxX23 = max(p1.x, p2.x)
+                let minY23 = min(p1.y, p2.y)
+                let maxY23 = max(p1.y, p2.y)
+                let clampedCp1 = CGPoint(
+                    x: max(min(cp1.x, maxX12), minX12),
+                    y: max(min(cp1.y, maxY12), minY12)
+                )
+                let clampedCp2 = CGPoint(
+                    x: max(min(cp2.x, maxX23), minX23),
+                    y: max(min(cp2.y, maxY23), minY23)
+                )
+                context.addCurve(to: p1, control1: clampedCp1, control2: clampedCp2)
                 
                 let cp3 = CGPoint(
                     x: p1.x + (p2.x - p1.x) * 0.3,
@@ -228,7 +246,15 @@ class BatteryChartView: NSView {
                     x: p2.x - (p2.x - p1.x) * 0.3,
                     y: p2.y - (p2.y - p1.y) * 0.3
                 )
-                context.addCurve(to: p2, control1: cp3, control2: cp4)
+                let clampedCp3 = CGPoint(
+                    x: max(min(cp3.x, maxX23), minX23),
+                    y: max(min(cp3.y, maxY23), minY23)
+                )
+                let clampedCp4 = CGPoint(
+                    x: max(min(cp4.x, maxX23), minX23),
+                    y: max(min(cp4.y, maxY23), minY23)
+                )
+                context.addCurve(to: p2, control1: clampedCp3, control2: clampedCp4)
             } else {
                 // 4个及以上点使用 Hermite 插值（非常平滑）
                 for i in 0..<(points.count - 1) {
@@ -238,21 +264,30 @@ class BatteryChartView: NSView {
                     let p3 = i < points.count - 2 ? points[i + 2] : points[i + 1]
                     
                     // 计算切线（Catmull-Rom 风格）
-                    let tension: CGFloat = 0.8  // 0.8 = 更平滑，0.5 = 标准 Catmull-Rom
+                    let tension: CGFloat = 0.5  // 降低张力，减少过冲
                     
                     let m1x = (p2.x - p0.x) * tension
                     let m1y = (p2.y - p0.y) * tension
                     let m2x = (p3.x - p1.x) * tension
                     let m2y = (p3.y - p1.y) * tension
                     
-                    let cp1 = CGPoint(
+                    var cp1 = CGPoint(
                         x: p1.x + m1x / 3.0,
                         y: p1.y + m1y / 3.0
                     )
-                    let cp2 = CGPoint(
+                    var cp2 = CGPoint(
                         x: p2.x - m2x / 3.0,
                         y: p2.y - m2y / 3.0
                     )
+                    // 约束控制点在当前段 [p1,p2] 的包围盒内，保证 X 方向单调，避免回折
+                    let minX = min(p1.x, p2.x)
+                    let maxX = max(p1.x, p2.x)
+                    let minY = min(p1.y, p2.y)
+                    let maxY = max(p1.y, p2.y)
+                    cp1.x = max(min(cp1.x, maxX), minX)
+                    cp2.x = max(min(cp2.x, maxX), minX)
+                    cp1.y = max(min(cp1.y, maxY), minY)
+                    cp2.y = max(min(cp2.y, maxY), minY)
                     
                     context.addCurve(to: p2, control1: cp1, control2: cp2)
                 }
@@ -296,7 +331,23 @@ class BatteryChartView: NSView {
                     x: p1.x - (p2.x - p1.x) * 0.3,
                     y: p1.y - (p2.y - p1.y) * 0.3
                 )
-                context.addCurve(to: p1, control1: cp1, control2: cp2)
+                let minX12 = min(p0.x, p1.x)
+                let maxX12 = max(p0.x, p1.x)
+                let minY12 = min(p0.y, p1.y)
+                let maxY12 = max(p0.y, p1.y)
+                let minX23 = min(p1.x, p2.x)
+                let maxX23 = max(p1.x, p2.x)
+                let minY23 = min(p1.y, p2.y)
+                let maxY23 = max(p1.y, p2.y)
+                let clampedCp1 = CGPoint(
+                    x: max(min(cp1.x, maxX12), minX12),
+                    y: max(min(cp1.y, maxY12), minY12)
+                )
+                let clampedCp2 = CGPoint(
+                    x: max(min(cp2.x, maxX23), minX23),
+                    y: max(min(cp2.y, maxY23), minY23)
+                )
+                context.addCurve(to: p1, control1: clampedCp1, control2: clampedCp2)
                 
                 let cp3 = CGPoint(
                     x: p1.x + (p2.x - p1.x) * 0.3,
@@ -306,7 +357,15 @@ class BatteryChartView: NSView {
                     x: p2.x - (p2.x - p1.x) * 0.3,
                     y: p2.y - (p2.y - p1.y) * 0.3
                 )
-                context.addCurve(to: p2, control1: cp3, control2: cp4)
+                let clampedCp3 = CGPoint(
+                    x: max(min(cp3.x, maxX23), minX23),
+                    y: max(min(cp3.y, maxY23), minY23)
+                )
+                let clampedCp4 = CGPoint(
+                    x: max(min(cp4.x, maxX23), minX23),
+                    y: max(min(cp4.y, maxY23), minY23)
+                )
+                context.addCurve(to: p2, control1: clampedCp3, control2: clampedCp4)
             } else {
                 // 4个及以上点使用 Hermite 插值（非常平滑）
                 for i in 0..<(points.count - 1) {
@@ -316,21 +375,30 @@ class BatteryChartView: NSView {
                     let p3 = i < points.count - 2 ? points[i + 2] : points[i + 1]
                     
                     // 计算切线（Catmull-Rom 风格）
-                    let tension: CGFloat = 0.8  // 0.8 = 更平滑，0.5 = 标准 Catmull-Rom
+                    let tension: CGFloat = 0.5  // 降低张力，减少过冲
                     
                     let m1x = (p2.x - p0.x) * tension
                     let m1y = (p2.y - p0.y) * tension
                     let m2x = (p3.x - p1.x) * tension
                     let m2y = (p3.y - p1.y) * tension
                     
-                    let cp1 = CGPoint(
+                    var cp1 = CGPoint(
                         x: p1.x + m1x / 3.0,
                         y: p1.y + m1y / 3.0
                     )
-                    let cp2 = CGPoint(
+                    var cp2 = CGPoint(
                         x: p2.x - m2x / 3.0,
                         y: p2.y - m2y / 3.0
                     )
+                    // 约束控制点在当前段 [p1,p2] 的包围盒内，保证 X 方向单调，避免回折
+                    let minX = min(p1.x, p2.x)
+                    let maxX = max(p1.x, p2.x)
+                    let minY = min(p1.y, p2.y)
+                    let maxY = max(p1.y, p2.y)
+                    cp1.x = max(min(cp1.x, maxX), minX)
+                    cp2.x = max(min(cp2.x, maxX), minX)
+                    cp1.y = max(min(cp1.y, maxY), minY)
+                    cp2.y = max(min(cp2.y, maxY), minY)
                     
                     context.addCurve(to: p2, control1: cp1, control2: cp2)
                 }
@@ -356,39 +424,134 @@ class BatteryChartView: NSView {
     
     private func prepareData() {
         // 准备数据：显示所有数据点（包括功率为0的），以便看到完整的时间线
-        chargingPoints = dataPoints
+        // 确保按时间排序，避免曲线回折导致的交叉
+        let sortedPoints = dataPoints.sorted { $0.timestamp < $1.timestamp }
         
         let now = Date().timeIntervalSince1970
         
-        if chargingPoints.isEmpty {
+        if sortedPoints.isEmpty {
             // 如果没有数据，设置默认范围
-            timeRange = (
-                start: now - 3600,  // 最近1小时
-                end: now
-            )
+            if let custom = customTimeRange {
+                timeRange = custom
+            } else {
+                timeRange = (
+                    start: now - 3600,  // 最近1小时
+                    end: now
+                )
+            }
             powerRange = (
                 min: 0,
                 max: 30.0  // 默认最大值30W（可根据需要调整）
             )
+            chargingPoints = []
         } else {
-            // 功率范围（最小值设为0，从底部开始）
+            // 先确定时间范围（优先使用自定义范围）
+            if let custom = customTimeRange {
+                timeRange = custom
+            } else {
+                let dataStartTime = sortedPoints.first!.timestamp.timeIntervalSince1970
+                let dataEndTime = sortedPoints.last!.timestamp.timeIntervalSince1970
+                let oneHourAgo = now - 3600
+                timeRange = (
+                    start: min(dataStartTime, oneHourAgo),
+                    end: max(dataEndTime, now)
+                )
+            }
+            
+            // 根据时间范围进行分桶重采样，限制总点数，并对空白时间段补零
+            let resampled = resample(points: sortedPoints, start: timeRange.start, end: timeRange.end)
+            chargingPoints = resampled
+            
+            // 根据重采样后的数据计算功率范围（最小值固定为0）
             let maxPower = chargingPoints.map { $0.power }.max() ?? 30.0
             powerRange = (
-                min: 0,  // 始终从0开始
-                max: max(maxPower * 1.1, 10.0)  // 留一些顶部空间，最小10W以便显示
-            )
-            
-            // 时间范围：如果数据点时间范围小于1小时，扩展到1小时
-            let dataStartTime = chargingPoints.first?.timestamp.timeIntervalSince1970 ?? now - 3600
-            let dataEndTime = chargingPoints.last?.timestamp.timeIntervalSince1970 ?? now
-            
-            // 确保时间范围至少是最近1小时
-            let oneHourAgo = now - 3600
-            timeRange = (
-                start: min(dataStartTime, oneHourAgo),
-                end: max(dataEndTime, now)
+                min: 0,
+                max: max(maxPower * 1.1, 10.0)
             )
         }
+    }
+
+    /// 将原始数据按时间分桶重采样，限制总点数并填补空白区间
+    private func resample(points: [BatteryDataPoint], start: TimeInterval, end: TimeInterval) -> [BatteryDataPoint] {
+        guard end > start else { return points }
+        let duration = end - start
+        // 选择桶宽（秒）
+        let bucket: TimeInterval
+        if duration <= 3600 { // 1小时
+            bucket = 30 // 30秒/点 ~120点
+        } else if duration <= 24*3600 { // 24小时
+            bucket = 120 // 2分钟/点 ~720点
+        } else if duration <= 7*24*3600 { // 7天
+            bucket = 600 // 10分钟/点
+        } else {
+            // 目标最多 ~800 点
+            bucket = max(1, duration / 800.0)
+        }
+        
+        // 构建桶
+        let bucketCount = max(1, Int(ceil(duration / bucket)))
+        var buckets: [[BatteryDataPoint]] = Array(repeating: [], count: bucketCount)
+        
+        // 将点分配到桶
+        for p in points {
+            let t = p.timestamp.timeIntervalSince1970
+            if t < start || t > end { continue }
+            var idx = Int((t - start) / bucket)
+            if idx >= bucketCount { idx = bucketCount - 1 }
+            if idx < 0 { idx = 0 }
+            buckets[idx].append(p)
+        }
+        
+        var result: [BatteryDataPoint] = []
+        result.reserveCapacity(bucketCount)
+        var lastPercentage: Int = points.last?.percentage ?? 0
+        
+        for i in 0..<bucketCount {
+            let bucketStart = start + Double(i) * bucket
+            let bucketMid = bucketStart + bucket/2
+            let items = buckets[i]
+            if items.isEmpty {
+                // 空白桶：补零点
+                let dp = BatteryDataPoint(
+                    timestamp: Date(timeIntervalSince1970: bucketMid),
+                    voltage: 0,
+                    current: 0,
+                    power: 0,
+                    percentage: lastPercentage,
+                    isCharging: false,
+                    temperature: nil,
+                    cycleCount: nil,
+                    designCapacity: nil,
+                    maxCapacity: nil,
+                    batteryHealth: nil
+                )
+                result.append(dp)
+            } else {
+                // 聚合：取平均功率、平均电压/电流，电量用平均四舍五入
+                let count = Double(items.count)
+                let avgPower = items.reduce(0.0) { $0 + $1.power } / count
+                let avgVoltage = items.reduce(0.0) { $0 + $1.voltage } / count
+                let avgCurrent = items.reduce(0.0) { $0 + $1.current } / count
+                let avgPct = Int((items.reduce(0.0) { $0 + Double($1.percentage) } / count).rounded())
+                lastPercentage = avgPct
+                let anyCharging = items.contains(where: { $0.isCharging && $0.power > 0 })
+                let dp = BatteryDataPoint(
+                    timestamp: Date(timeIntervalSince1970: bucketMid),
+                    voltage: avgVoltage,
+                    current: avgCurrent,
+                    power: max(0, avgPower),
+                    percentage: avgPct,
+                    isCharging: anyCharging,
+                    temperature: nil,
+                    cycleCount: nil,
+                    designCapacity: nil,
+                    maxCapacity: nil,
+                    batteryHealth: nil
+                )
+                result.append(dp)
+            }
+        }
+        return result
     }
     
     private func drawHoveredPoint(context: CGContext, point: BatteryDataPoint, rect: NSRect) {
