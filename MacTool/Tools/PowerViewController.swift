@@ -15,6 +15,8 @@ class PowerViewController: NSViewController {
     
     var powerLabel: NSTextField!
     var batteryLabel: NSTextField!  // 电量显示标签
+    var healthLabel: NSTextField!   // 健康度显示标签
+    var cycleLabel: NSTextField!    // 循环次数显示标签
     var refreshButton: NSButton!
     var statusLabel: NSTextField!
     var openDatabaseButton: NSButton!
@@ -198,6 +200,22 @@ class PowerViewController: NSViewController {
         batteryLabel.translatesAutoresizingMaskIntoConstraints = false
         infoPanel.addSubview(batteryLabel)
         
+        // 创建健康度标签
+        healthLabel = NSTextField(labelWithString: "健康度: --%")
+        healthLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        healthLabel.alignment = .center
+        healthLabel.textColor = NSColor.secondaryLabelColor
+        healthLabel.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(healthLabel)
+        
+        // 创建循环次数标签
+        cycleLabel = NSTextField(labelWithString: "循环: --")
+        cycleLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        cycleLabel.alignment = .center
+        cycleLabel.textColor = NSColor.secondaryLabelColor
+        cycleLabel.translatesAutoresizingMaskIntoConstraints = false
+        infoPanel.addSubview(cycleLabel)
+        
         // 创建状态标签
         statusLabel = NSTextField(labelWithString: "等待数据刷新...")
         statusLabel.font = NSFont.systemFont(ofSize: 13)
@@ -350,10 +368,19 @@ class PowerViewController: NSViewController {
         headlineStack.translatesAutoresizingMaskIntoConstraints = false
         headerStack.addArrangedSubview(headlineStack)
 
-        // 第二行：状态标签
+        // 第二行：健康度 + 循环次数（水平栈）
+        let healthStack = NSStackView(views: [healthLabel, cycleLabel])
+        healthStack.orientation = .horizontal
+        healthStack.spacing = 20
+        healthStack.alignment = .centerY
+        healthStack.distribution = .equalCentering
+        healthStack.translatesAutoresizingMaskIntoConstraints = false
+        headerStack.addArrangedSubview(healthStack)
+
+        // 第三行：状态标签
         headerStack.addArrangedSubview(statusLabel)
 
-        // 第三行：分段 + 弹性 + 刷新 + 更多（水平栈）
+        // 第四行：分段 + 弹性 + 刷新 + 更多（水平栈）
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -365,14 +392,14 @@ class PowerViewController: NSViewController {
         controlsStack.translatesAutoresizingMaskIntoConstraints = false
         headerStack.addArrangedSubview(controlsStack)
 
-        // 第四行：折叠按钮
+        // 第五行：折叠按钮
         headerStack.addArrangedSubview(disclosureButton)
 
-        // 第五行：日期容器（内部已有子控件）
+        // 第六行：日期容器（内部已有子控件）
         headerStack.addArrangedSubview(dateContainer)
 
         // 基本约束：infoPanel 和 headerStack
-        infoPanelHeightConstraint = infoPanel.heightAnchor.constraint(equalToConstant: 210)
+        infoPanelHeightConstraint = infoPanel.heightAnchor.constraint(equalToConstant: 230)
         NSLayoutConstraint.activate([
             // 信息面板铺满顶部
             infoPanel.topAnchor.constraint(equalTo: view.topAnchor),
@@ -430,7 +457,7 @@ class PowerViewController: NSViewController {
         endDatePicker.dateValue = now
         // 初始收起第三排
         dateContainer.isHidden = true
-        infoPanelHeightConstraint.constant = 180
+        infoPanelHeightConstraint.constant = 200
     }
     
     // MARK: - Actions
@@ -640,7 +667,11 @@ class PowerViewController: NSViewController {
         currentY = createTrendAnalysisSection(y: currentY, containerView: containerView, statistics: statistics, padding: padding)
         currentY += sectionSpacing
         
-        // ========== 四、不同电量段的平均功率（图表）==========
+        // ========== 四、电池健康度分析 ==========
+        currentY = createBatteryHealthSection(y: currentY, containerView: containerView, padding: padding)
+        currentY += sectionSpacing
+        
+        // ========== 五、不同电量段的平均功率（图表）==========
         currentY = createPowerByPercentageSection(y: currentY, containerView: containerView, statistics: statistics, padding: padding)
         
         // 添加底部空白占位视图，确保有足够的空间
@@ -797,12 +828,142 @@ class PowerViewController: NSViewController {
         return currentY + 10
     }
     
+    /// 创建电池健康度分析区域
+    private func createBatteryHealthSection(y: CGFloat, containerView: NSView, padding: CGFloat) -> CGFloat {
+        var currentY = y
+        
+        // 章节标题
+        createSectionTitle(text: "🔋 四、电池健康度分析", y: &currentY, containerView: containerView, padding: padding)
+        currentY += 5
+        
+        // 获取所有数据点，分析健康度
+        let allDataPoints = PowerHelper.shared.getAllDataPoints()
+        let healthDataPoints = allDataPoints.filter { $0.batteryHealth != nil }
+        
+        guard !healthDataPoints.isEmpty else {
+            // 如果没有健康度数据，显示提示
+            let noDataLabel = NSTextField(labelWithString: "暂无健康度数据")
+            noDataLabel.font = NSFont.systemFont(ofSize: 12)
+            noDataLabel.textColor = NSColor.secondaryLabelColor
+            noDataLabel.translatesAutoresizingMaskIntoConstraints = false
+            containerView.addSubview(noDataLabel)
+            
+            NSLayoutConstraint.activate([
+                noDataLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: currentY),
+                noDataLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding + 20),
+                noDataLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -(padding + 20))
+            ])
+            return currentY + 30
+        }
+        
+        // 分析健康度数据
+        let healthValues = healthDataPoints.compactMap { $0.batteryHealth }
+        let currentHealth = healthValues.last ?? 0
+        let maxHealth = healthValues.max() ?? 0
+        let minHealth = healthValues.min() ?? 0
+        let avgHealth = healthValues.reduce(0, +) / Double(healthValues.count)
+        
+        // 获取最新的循环次数和容量数据（这些值通常不会变化，取最新值即可）
+        let latestData = healthDataPoints.last
+        let currentCycleCount = latestData?.cycleCount ?? 0
+        let designCapacity = latestData?.designCapacity
+        let maxCapacity = latestData?.maxCapacity
+        
+        // 如果有多条数据，查找循环次数的变化范围
+        let allCycleCounts = allDataPoints.compactMap { $0.cycleCount }
+        let maxCycleCount = allCycleCounts.max() ?? currentCycleCount
+        
+        // 显示当前健康度
+        createMetricRow(
+            title: "当前健康度",
+            value: String(format: "%.1f%%", currentHealth),
+            maxValue: 100,
+            currentValue: currentHealth,
+            color: getHealthColor(currentHealth),
+            y: &currentY,
+            containerView: containerView,
+            padding: padding
+        )
+        currentY += 10
+        
+        // 显示平均健康度
+        createMetricRow(
+            title: "平均健康度",
+            value: String(format: "%.1f%%", avgHealth),
+            maxValue: 100,
+            currentValue: avgHealth,
+            color: getHealthColor(avgHealth),
+            y: &currentY,
+            containerView: containerView,
+            padding: padding
+        )
+        currentY += 10
+        
+        // 显示健康度范围
+        let healthRangeText = String(format: "健康度范围: %.1f%% - %.1f%%", minHealth, maxHealth)
+        let healthRangeLabel = NSTextField(labelWithString: healthRangeText)
+        healthRangeLabel.font = NSFont.systemFont(ofSize: 12)
+        healthRangeLabel.textColor = NSColor.secondaryLabelColor
+        healthRangeLabel.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(healthRangeLabel)
+        
+        NSLayoutConstraint.activate([
+            healthRangeLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: currentY),
+            healthRangeLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: padding + 20),
+            healthRangeLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -(padding + 20))
+        ])
+        currentY += 25
+        
+        // 显示循环次数
+        if currentCycleCount > 0 {
+            let cycleDescription = maxCycleCount > currentCycleCount ? "电池总循环次数（历史最高: \(maxCycleCount)次）" : "电池总循环次数"
+            createTableRow(
+                title: "循环次数",
+                value: "\(currentCycleCount)次",
+                description: cycleDescription,
+                y: currentY,
+                containerView: containerView,
+                padding: padding
+            )
+            currentY += 48
+        }
+        
+        // 显示容量信息
+        if let design = designCapacity, let max = maxCapacity {
+            let capacityText = "\(max) / \(design) mAh"
+            createTableRow(
+                title: "电池容量",
+                value: capacityText,
+                description: "当前最大容量 / 设计容量",
+                y: currentY,
+                containerView: containerView,
+                padding: padding
+            )
+            currentY += 48
+        }
+        
+        return currentY + 10
+    }
+    
+    /// 根据健康度获取颜色
+    private func getHealthColor(_ health: Double) -> NSColor {
+        if health >= 90 {
+            return NSColor.systemGreen
+        } else if health >= 80 {
+            return NSColor.systemYellow
+        } else if health >= 70 {
+            return NSColor.systemOrange
+        } else {
+            return NSColor.systemRed
+        }
+    }
+    
     /// 创建电量段功率区域（可视化图表）
     private func createPowerByPercentageSection(y: CGFloat, containerView: NSView, statistics: BatteryStatistics, padding: CGFloat) -> CGFloat {
         var currentY = y
         
         // 章节标题
-        createSectionTitle(text: "📋 四、不同电量段的平均功率", y: &currentY, containerView: containerView, padding: padding)
+        createSectionTitle(text: "📋 五、不同电量段的平均功率", y: &currentY, containerView: containerView, padding: padding)
         currentY += 5
         
         let subtitle = NSTextField(labelWithString: "功率随电量变化趋势（每10%电量为一组）")
@@ -1122,6 +1283,16 @@ class PowerViewController: NSViewController {
         height += 180 + 30  // 功率统计区域（3个指标 * 50 + 标题） + sectionSpacing
         height += 150 + 30  // 数据统计区域（3个表格行 * 40 + 标题） + sectionSpacing
         height += 150 + 30  // 趋势分析区域（2个百分比行 * 55 + 标题） + sectionSpacing
+        
+        // 健康度分析区域高度
+        let allDataPoints = PowerHelper.shared.getAllDataPoints()
+        let hasHealthData = !allDataPoints.filter { $0.batteryHealth != nil }.isEmpty
+        if hasHealthData {
+            height += 200 + 30  // 健康度分析区域（2个指标行 + 信息行 + 表格行） + sectionSpacing
+        } else {
+            height += 60 + 30  // 无数据提示 + sectionSpacing
+        }
+        
         height += 55 + CGFloat(statistics.powerByPercentage.count) * 25  // 电量段功率区域（标题+副标题+条形图）
         height += 130  // 底部间距
         return height
@@ -1258,6 +1429,40 @@ class PowerViewController: NSViewController {
             batteryLabel.textColor = NSColor.systemRed
         }
         
+        // 更新健康度显示
+        if let health = dataPoint.batteryHealth {
+            healthLabel.stringValue = String(format: "健康度: %.1f%%", health)
+            // 根据健康度设置颜色
+            if health >= 90 {
+                healthLabel.textColor = NSColor.systemGreen
+            } else if health >= 80 {
+                healthLabel.textColor = NSColor.systemYellow
+            } else if health >= 70 {
+                healthLabel.textColor = NSColor.systemOrange
+            } else {
+                healthLabel.textColor = NSColor.systemRed
+            }
+        } else {
+            healthLabel.stringValue = "健康度: --%"
+            healthLabel.textColor = NSColor.secondaryLabelColor
+        }
+        
+        // 更新循环次数显示
+        if let cycleCount = dataPoint.cycleCount {
+            cycleLabel.stringValue = "循环: \(cycleCount)次"
+            // 根据循环次数设置颜色（通常超过1000次需要关注）
+            if cycleCount < 500 {
+                cycleLabel.textColor = NSColor.systemGreen
+            } else if cycleCount < 1000 {
+                cycleLabel.textColor = NSColor.systemYellow
+            } else {
+                cycleLabel.textColor = NSColor.systemOrange
+            }
+        } else {
+            cycleLabel.stringValue = "循环: --"
+            cycleLabel.textColor = NSColor.secondaryLabelColor
+        }
+        
         let intervalDesc = PowerHelper.shared.getRefreshIntervalDescription()
         if dataPoint.isCharging {
             powerLabel.stringValue = String(format: "%.2f W", dataPoint.power)
@@ -1276,6 +1481,10 @@ class PowerViewController: NSViewController {
         } else {
             batteryLabel.stringValue = "--%"
             batteryLabel.textColor = NSColor.secondaryLabelColor
+            healthLabel.stringValue = "健康度: --%"
+            healthLabel.textColor = NSColor.secondaryLabelColor
+            cycleLabel.stringValue = "循环: --"
+            cycleLabel.textColor = NSColor.secondaryLabelColor
             let intervalDesc = PowerHelper.shared.getRefreshIntervalDescription()
             statusLabel.stringValue = "暂无数据 | 刷新频率: \(intervalDesc)"
             statusLabel.textColor = NSColor.secondaryLabelColor
@@ -1377,7 +1586,7 @@ class PowerViewController: NSViewController {
         let hidden = !dateContainer.isHidden
         dateContainer.isHidden = hidden
         disclosureButton.title = hidden ? "自定义时间 ▸" : "自定义时间 ▾"
-        infoPanelHeightConstraint.constant = hidden ? 180 : 210
+        infoPanelHeightConstraint.constant = hidden ? 200 : 230
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             self.view.layoutSubtreeIfNeeded()
