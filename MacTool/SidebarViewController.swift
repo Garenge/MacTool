@@ -92,7 +92,7 @@ class SidebarViewController: NSViewController {
         // 创建测试开关容器
         testSwitchContainer = NSView()
         testSwitchContainer.wantsLayer = true
-        testSwitchContainer.layer?.backgroundColor = ThemeColors.secondaryBackgroundColor.cgColor
+        testSwitchContainer.layer?.backgroundColor = ThemeColors.cardBackground.cgColor
         testSwitchContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(testSwitchContainer)
         
@@ -155,7 +155,7 @@ class SidebarViewController: NSViewController {
         view.appearance = NSApp.effectiveAppearance
         
         let sidebarBgColor = ThemeColors.sidebarBackgroundColor
-        let secondaryBgColor = ThemeColors.secondaryBackgroundColor
+        let secondaryBgColor = ThemeColors.cardBackground
         
         view.layer?.backgroundColor = sidebarBgColor.cgColor
         tableView.backgroundColor = NSColor.clear

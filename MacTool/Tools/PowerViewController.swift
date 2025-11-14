@@ -58,6 +58,8 @@ class PowerViewController: NSViewController {
     
     override func viewWillAppear() {
         super.viewWillAppear()
+        // 更新刷新频率菜单的选中状态
+        updateRefreshIntervalMenuState()
         // 显示当前数据
         updateUIWithLatestData()
         // 更新背景色以适应当前主题
@@ -255,6 +257,30 @@ class PowerViewController: NSViewController {
         let statsItem = NSMenuItem(title: "查看统计", action: #selector(showStatistics), keyEquivalent: "")
         statsItem.target = self
         moreMenu.addItem(statsItem)
+        // 添加分隔符
+        moreMenu.addItem(NSMenuItem.separator())
+        // 添加刷新频率子菜单
+        let refreshIntervalMenuItem = NSMenuItem(title: "刷新频率", action: nil, keyEquivalent: "")
+        let refreshIntervalSubmenu = NSMenu()
+        let refreshIntervals: [(title: String, seconds: TimeInterval)] = [
+            ("1秒", 1.0),
+            ("2秒", 2.0),
+            ("5秒", 5.0),
+            ("10秒", 10.0),
+            ("30秒", 30.0),
+            ("1分钟", 60.0),
+            ("2分钟", 120.0),
+            ("5分钟", 300.0)
+        ]
+        for interval in refreshIntervals {
+            let item = NSMenuItem(title: interval.title, action: #selector(selectRefreshInterval(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = interval.seconds
+            item.state = PowerHelper.shared.refreshInterval == interval.seconds ? .on : .off
+            refreshIntervalSubmenu.addItem(item)
+        }
+        refreshIntervalMenuItem.submenu = refreshIntervalSubmenu
+        moreMenu.addItem(refreshIntervalMenuItem)
         moreButton.menu = moreMenu
         buttonContainer.addSubview(moreButton)
         // 隐藏旧按钮以减少拥挤
@@ -434,6 +460,33 @@ class PowerViewController: NSViewController {
             statusLabel.stringValue = "数据库已清空"
             statusLabel.textColor = NSColor.systemOrange
             powerLabel.stringValue = "--"
+        }
+    }
+    
+    @objc private func selectRefreshInterval(_ sender: NSMenuItem) {
+        guard let interval = sender.representedObject as? TimeInterval else { return }
+        
+        // 更新刷新频率（这会自动重启定时器）
+        PowerHelper.shared.refreshInterval = interval
+        
+        // 更新菜单项的选中状态
+        updateRefreshIntervalMenuState()
+        
+        // 更新UI以显示新的刷新频率
+        updateUIWithLatestData()
+    }
+    
+    /// 更新刷新频率菜单项的选中状态
+    private func updateRefreshIntervalMenuState() {
+        guard let moreMenu = moreButton.menu,
+              let refreshIntervalMenuItem = moreMenu.item(withTitle: "刷新频率"),
+              let submenu = refreshIntervalMenuItem.submenu else { return }
+        
+        let currentInterval = PowerHelper.shared.refreshInterval
+        for item in submenu.items {
+            if let interval = item.representedObject as? TimeInterval {
+                item.state = interval == currentInterval ? .on : .off
+            }
         }
     }
     
@@ -882,8 +935,9 @@ class PowerViewController: NSViewController {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        container.layer?.backgroundColor = ThemeColors.cardBackground.cgColor
         container.layer?.cornerRadius = 4
+        container.identifier = NSUserInterfaceItemIdentifier("statsRow")
         containerView.addSubview(container)
         
         let titleLabel = NSTextField(labelWithString: title)
@@ -1204,12 +1258,13 @@ class PowerViewController: NSViewController {
             batteryLabel.textColor = NSColor.systemRed
         }
         
+        let intervalDesc = PowerHelper.shared.getRefreshIntervalDescription()
         if dataPoint.isCharging {
             powerLabel.stringValue = String(format: "%.2f W", dataPoint.power)
-            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 充电中"
+            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 充电中 | 刷新频率: \(intervalDesc)"
         } else {
             powerLabel.stringValue = "未充电"
-            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 未充电"
+            statusLabel.stringValue = "上次更新: \(dateFormatter.string(from: dataPoint.timestamp)) | 未充电 | 刷新频率: \(intervalDesc)"
         }
         statusLabel.textColor = NSColor.secondaryLabelColor
     }
@@ -1221,7 +1276,8 @@ class PowerViewController: NSViewController {
         } else {
             batteryLabel.stringValue = "--%"
             batteryLabel.textColor = NSColor.secondaryLabelColor
-            statusLabel.stringValue = "暂无数据"
+            let intervalDesc = PowerHelper.shared.getRefreshIntervalDescription()
+            statusLabel.stringValue = "暂无数据 | 刷新频率: \(intervalDesc)"
             statusLabel.textColor = NSColor.secondaryLabelColor
         }
         updateChart()
@@ -1272,12 +1328,13 @@ class PowerViewController: NSViewController {
     }
 
     @objc private func selectLastHour() {
+        // 近1小时应实时跟随：清空自定义时间范围，使用 updateChart 的默认分支
+        selectedStartDate = nil
+        selectedEndDate = nil
         let now = Date()
-        let s = now.addingTimeInterval(-3600)
-        let e = now
-        startDatePicker.dateValue = s
-        endDatePicker.dateValue = e
-        setChartRange(start: s, end: e)
+        startDatePicker.dateValue = now.addingTimeInterval(-3600)
+        endDatePicker.dateValue = now
+        updateChart()
     }
 
     @objc private func selectLast24h() {

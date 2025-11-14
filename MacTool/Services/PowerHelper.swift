@@ -15,8 +15,26 @@ class PowerHelper {
     // MARK: - Properties
     
     private var timer: Timer?
-    private let refreshInterval: TimeInterval = 5.0 // 5秒刷新一次
     private var isRunning = false
+    private let refreshIntervalKey = "PowerRefreshInterval"
+    private let defaultRefreshInterval: TimeInterval = 5.0 // 默认5秒
+    
+    /// 当前刷新间隔（秒）
+    var refreshInterval: TimeInterval {
+        get {
+            if UserDefaults.standard.object(forKey: refreshIntervalKey) != nil {
+                return UserDefaults.standard.double(forKey: refreshIntervalKey)
+            }
+            return defaultRefreshInterval
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: refreshIntervalKey)
+            // 如果正在运行，需要重启定时器以应用新的刷新频率
+            if isRunning {
+                restart()
+            }
+        }
+    }
     
     // MARK: - Initialization
     
@@ -37,9 +55,26 @@ class PowerHelper {
         fetchPowerData()
         
         // 启动定时器
+        startTimer()
+    }
+    
+    /// 启动定时器
+    private func startTimer() {
+        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.fetchPowerData()
         }
+        // 确保定时器在 RunLoop 中运行
+        if let timer = timer {
+            RunLoop.current.add(timer, forMode: .common)
+        }
+    }
+    
+    /// 重启定时器（用于应用新的刷新频率）
+    private func restart() {
+        guard isRunning else { return }
+        print("[PowerHelper] 🔄 重启定时器 | 新的刷新间隔: \(Int(refreshInterval))秒")
+        startTimer()
     }
     
     /// 停止监控
@@ -50,6 +85,22 @@ class PowerHelper {
         timer = nil
         
         print("[PowerHelper] 🛑 停止功率监控")
+    }
+    
+    /// 获取刷新频率的显示文本
+    func getRefreshIntervalDescription() -> String {
+        let interval = refreshInterval
+        if interval < 60 {
+            return "\(Int(interval))秒"
+        } else {
+            let minutes = Int(interval) / 60
+            let seconds = Int(interval) % 60
+            if seconds == 0 {
+                return "\(minutes)分钟"
+            } else {
+                return "\(minutes)分\(seconds)秒"
+            }
+        }
     }
     
     /// 获取功率数据

@@ -16,6 +16,7 @@ class ThemeViewController: NSViewController {
     private var themeButtons: [NSButton] = []
     private var currentThemeIndicator: NSTextField!
     private var themeCards: [NSView] = []  // 保存主题卡片引用
+    private var themeCardMap: [AppTheme: NSView] = [:]  // 主题到卡片的映射
     private var testContainer: NSView!  // 保存测试容器引用
     
     // 测试开关（用于快速测试主题切换）
@@ -28,6 +29,7 @@ class ThemeViewController: NSViewController {
         super.viewDidLoad()
         setupUI()
         updateCurrentThemeIndicator()
+        updateColors()
         
         // 监听主题变更
         NotificationCenter.default.addObserver(
@@ -99,6 +101,7 @@ class ThemeViewController: NSViewController {
         for theme in AppTheme.allCases {
             let card = createThemeCard(for: theme)
             themeCards.append(card)  // 保存引用
+            themeCardMap[theme] = card // 建立映射
             themesContainer.addSubview(card)
             
             NSLayoutConstraint.activate([
@@ -213,12 +216,17 @@ class ThemeViewController: NSViewController {
     private func createThemeCard(for theme: AppTheme) -> NSView {
         let card = NSView()
         card.wantsLayer = true
-        card.layer?.backgroundColor = ThemeColors.secondaryBackgroundColor.cgColor
+        card.layer?.backgroundColor = ThemeColors.secondaryBackground.cgColor
         card.layer?.cornerRadius = 10
         card.layer?.borderWidth = 2
         card.layer?.borderColor = (ThemeManager.shared.currentTheme == theme) ? 
-            ThemeColors.accentColor.cgColor : NSColor.clear.cgColor
+            ThemeColors.accent.cgColor : NSColor.clear.cgColor
         card.translatesAutoresizingMaskIntoConstraints = false
+        // 标识当前卡片对应的主题
+        card.identifier = NSUserInterfaceItemIdentifier(theme.rawValue)
+        // 添加点击手势（点击卡片弹出确认对话框）
+        let click = NSClickGestureRecognizer(target: self, action: #selector(cardClicked(_:)))
+        card.addGestureRecognizer(click)
         
         // 图标
         let iconLabel = NSTextField(labelWithString: theme.icon)
@@ -270,6 +278,26 @@ class ThemeViewController: NSViewController {
         
         return card
     }
+
+    /// 点击主题卡片（非按钮）时弹出确认后切换
+    @objc private func cardClicked(_ sender: NSClickGestureRecognizer) {
+        guard sender.state == .ended, let view = sender.view,
+              let id = view.identifier?.rawValue,
+              let theme = AppTheme(rawValue: id) else { return }
+        
+        let alert = NSAlert()
+        alert.messageText = "切换主题"
+        alert.informativeText = "是否切换到 \(theme.displayName)？"
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .informational
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            ThemeManager.shared.currentTheme = theme
+        }
+    }
+
+    // 手势代理逻辑在 NSGestureRecognizerDelegate 扩展中实现
     
     // MARK: - Actions
     
@@ -303,18 +331,9 @@ class ThemeViewController: NSViewController {
     // MARK: - Helper Methods
     
     private func updateThemeCards() {
-        for case let card as NSView in view.subviews.first?.subviews.first?.subviews ?? [] {
-            if card.layer?.cornerRadius == 10 {
-                // 找到对应的按钮
-                for subview in card.subviews {
-                    if let button = subview as? NSButton,
-                       let identifier = button.identifier?.rawValue,
-                       let theme = AppTheme(rawValue: identifier) {
-                        card.layer?.borderColor = (ThemeManager.shared.currentTheme == theme) ?
-                            ThemeColors.accentColor.cgColor : NSColor.clear.cgColor
-                    }
-                }
-            }
+        for (theme, card) in themeCardMap {
+            card.layer?.borderColor = (ThemeManager.shared.currentTheme == theme) ?
+                ThemeColors.accent.cgColor : NSColor.clear.cgColor
         }
     }
     
@@ -328,19 +347,20 @@ class ThemeViewController: NSViewController {
     }
     
     private func updateColors() {
-        view.layer?.backgroundColor = ThemeColors.backgroundColor.cgColor
+        view.layer?.backgroundColor = ThemeColors.primaryBackground.cgColor
         
-        // 更新主题卡片背景
-        for card in themeCards {
-            card.layer?.backgroundColor = ThemeColors.secondaryBackgroundColor.cgColor
+        // 更新主题卡片/快速设置卡片背景：统一使用 ThemeColors.cardBackground
+        let cardColor = ThemeColors.cardBackground.cgColor
+        for (_, card) in themeCardMap {
+            card.layer?.backgroundColor = cardColor
         }
         
-        // 更新测试容器背景
-        testContainer?.layer?.backgroundColor = ThemeColors.secondaryBackgroundColor.cgColor
+        // 更新快速设置卡片（带开关）的背景为同色
+        testContainer?.layer?.backgroundColor = cardColor
         
         // 更新文本颜色
         titleLabel.textColor = ThemeColors.labelColor
         descriptionLabel.textColor = ThemeColors.secondaryLabelColor
-        currentThemeIndicator.textColor = ThemeColors.accentColor
+        currentThemeIndicator.textColor = ThemeColors.accent
     }
 }

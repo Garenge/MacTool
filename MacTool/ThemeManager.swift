@@ -61,6 +61,20 @@ struct ThemeColors {
         }
     }
     
+    /// 自定义卡片背景（浅/深两套固定颜色）
+    static var cardBackgroundLight: NSColor {
+        return NSColor(calibratedRed: 240.0/255.0, green: 240.0/255.0, blue: 240.0/255.0, alpha: 1.0)
+    }
+    
+    static var cardBackgroundDark: NSColor {
+        return NSColor(calibratedRed: 60.0/255.0, green: 60.0/255.0, blue: 60.0/255.0, alpha: 1.0)
+    }
+    
+    /// 按当前主题返回卡片背景色（避免 NSColor 动态颜色在转 CGColor 时解析不一致）
+    static var cardBackground: NSColor {
+        return ThemeManager.shared.isDarkMode ? cardBackgroundDark : cardBackgroundLight
+    }
+    
     /// 控制背景色
     static var controlBackgroundColor: NSColor {
         return NSColor.controlBackgroundColor
@@ -86,6 +100,36 @@ struct ThemeColors {
     /// 三级文本色
     static var tertiaryLabelColor: NSColor {
         return NSColor.tertiaryLabelColor
+    }
+    
+    static var primaryBackground: NSColor {
+        return NSColor(name: nil) { appearance in
+            appearance.name == .darkAqua ? NSColor(calibratedWhite: 0.12, alpha: 1.0) : NSColor(calibratedWhite: 0.98, alpha: 1.0)
+        }
+    }
+    
+    static var secondaryBackground: NSColor {
+        return NSColor(name: nil) { appearance in
+            appearance.name == .darkAqua ? NSColor(calibratedWhite: 0.18, alpha: 1.0) : NSColor(calibratedWhite: 0.95, alpha: 1.0)
+        }
+    }
+    
+    static var primaryText: NSColor {
+        return NSColor.labelColor
+    }
+    
+    static var secondaryText: NSColor {
+        return NSColor.secondaryLabelColor
+    }
+    
+    static var border: NSColor {
+        return NSColor(name: nil) { appearance in
+            appearance.name == .darkAqua ? NSColor(white: 1.0, alpha: 0.12) : NSColor(white: 0.0, alpha: 0.12)
+        }
+    }
+    
+    static var accent: NSColor {
+        return NSColor.controlAccentColor
     }
     
     // MARK: - 强调色

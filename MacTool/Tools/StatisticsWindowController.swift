@@ -69,6 +69,11 @@ class StatisticsWindowController: NSWindowController, NSWindowDelegate {
         if view is FlippedView {
             view.wantsLayer = true
         }
+        // 统一更新统计页面中“数据统计指标”行容器的背景色
+        if view.identifier?.rawValue == "statsRow" {
+            view.wantsLayer = true
+            view.layer?.backgroundColor = ThemeColors.cardBackground.cgColor
+        }
         for sub in view.subviews {
             applyAppearanceRecursively(in: sub)
         }
